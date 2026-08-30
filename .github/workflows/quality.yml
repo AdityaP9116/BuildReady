@@ -15,23 +15,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
-          node-version: 24
-          cache: npm
+          enable-cache: true
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Synchronize project
+        run: uv sync --locked
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Type-check
-        run: npm run typecheck
+      - name: Check
+        run: uv run python scripts/check.py
 
       - name: Test
-        run: npm test
+        run: uv run python -m unittest discover -s tests -v
 
       - name: Build
-        run: npm run build
+        run: uv run python scripts/build.py

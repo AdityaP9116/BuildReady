@@ -16,40 +16,39 @@ Gate 1 establishes the repository, routed application shell, quality checks, and
 6. Compare two controlled supplier fixtures.
 7. Generate an auditable manufacturing-readiness package.
 
+## Toolchain
+
+BuildReady intentionally uses a small, npm-free toolchain. The browser application is plain HTML, CSS, and JavaScript, while Python's standard library handles local serving, validation, tests, and deterministic build output. [`uv`](https://docs.astral.sh/uv/) is the only project runner and environment manager; the project has no PyPI or npm dependencies.
+
 ## Local development
 
 Prerequisites:
 
-- Node.js 24 or later
-- npm 11 or later
+- `uv` 0.12 or later
+- Python 3.11 or later (the project pins 3.11 to reuse the existing local runtime)
 
-Install and run:
+Synchronize and run:
 
 ```bash
-npm install
-npm run dev
+uv sync --locked
+uv run python scripts/serve.py
 ```
+
+Open `http://127.0.0.1:4173`. The development server provides SPA fallbacks, so `/design`, `/suppliers`, `/review`, and `/about` can all be loaded directly.
 
 Quality checks:
 
 ```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build
+uv run python scripts/check.py
+uv run python -m unittest discover -s tests -v
+uv run python scripts/build.py
 ```
 
 ## Deployment
 
-The production target is Cloudflare Pages. The tracked `wrangler.jsonc` file is the deployment source of truth, and `public/_redirects` preserves direct loading for client-side routes such as `/design`, `/suppliers`, and `/review`.
+The production target remains Cloudflare Pages. Connect the GitHub repository to Pages, leave the build command empty, and set the output directory to `web`. The tracked `web/_redirects` file preserves direct loading for client-side routes such as `/design`, `/suppliers`, and `/review`.
 
-After authenticating Wrangler with the intended Cloudflare account, deploy with:
-
-```bash
-npm run deploy
-```
-
-The command builds the application and uploads `dist/` to the `buildready` Pages project. Do not add secrets or account identifiers to the repository.
+For a locally verified artifact, run `uv run python scripts/build.py`; the command recreates `dist/` from the deployable `web/` source without installing another toolchain.
 
 ## Browser compatibility
 

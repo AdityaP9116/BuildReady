@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-BuildReady uses open-source packages distributed through npm. Their individual licenses and notices are included with installed package metadata and the generated lockfile.
+BuildReady currently has no third-party runtime or development dependencies. The project uses Python's standard library and browser-native APIs, with `uv` acting only as the environment and command runner.
 
 The controlled bracket geometry, fictional supplier data, written content, and interface assets in this repository are original project fixtures unless a source is explicitly identified here.
 
