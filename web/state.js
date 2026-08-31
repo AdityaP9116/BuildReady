@@ -3,6 +3,7 @@ import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rul
 import { revisionPrecondition, validateRadiusProposal } from './workflow-rules.js'
 import { prepareQuoteComparison } from './quote-engine.js'
 import { createReviewPackage } from './review-package.js'
+import { attachToolErrorContract } from './error-contract.js'
 
 export { DESIGN_FIXTURE }
 
@@ -79,7 +80,7 @@ function abortIfRequested(signal) {
 
 function assertEmptyObject(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length > 0) {
-    throw new TypeError('INVALID_INPUT: expected an empty object.')
+    throw new WorkflowRuleError('INVALID_INPUT', 'expected an empty object.')
   }
 }
 
@@ -147,7 +148,7 @@ async function inspectCncManufacturability(input, { signal } = {}) {
   const severity = input?.severity ?? 'all'
 
   if (unknownKeys.length > 0 || !allowedSeverities.includes(severity)) {
-    throw new TypeError('INVALID_INPUT: severity must be all, high, or medium.')
+    throw new WorkflowRuleError('INVALID_INPUT', 'severity must be all, high, or medium.')
   }
 
   const inspection = evaluateCncManufacturability(DESIGN_FIXTURE, { severity })
@@ -173,18 +174,18 @@ async function getIssueDetails(input, { signal } = {}) {
   abortIfRequested(signal)
   const keys = Object.keys(input ?? {})
   if (keys.length !== 1 || keys[0] !== 'findingId' || typeof input.findingId !== 'string') {
-    throw new TypeError('INVALID_INPUT: findingId must identify one current finding.')
+    throw new WorkflowRuleError('INVALID_INPUT', 'findingId must identify one current finding.')
   }
   if (workflowState.inspectionStatus !== 'complete' || !workflowState.inspection) {
-    throw new Error('INSPECTION_REQUIRED: run inspect_cnc_manufacturability first.')
+    throw new WorkflowRuleError('INSPECTION_REQUIRED', 'run inspect_cnc_manufacturability first.')
   }
   if (workflowState.inspection.revisionPrecondition !== revisionPrecondition(DESIGN_FIXTURE)) {
-    throw new Error('STALE_INSPECTION: re-run inspection for the active revision.')
+    throw new WorkflowRuleError('STALE_INSPECTION', 're-run inspection for the active revision.', true)
   }
 
   const finding = workflowState.findings.find((candidate) => candidate.findingId === input.findingId)
   if (!finding) {
-    throw new Error('FINDING_NOT_FOUND: choose a finding from the current inspection.')
+    throw new WorkflowRuleError('FINDING_NOT_FOUND', 'choose a finding from the current inspection.')
   }
   const feature = DESIGN_FIXTURE.features.find((candidate) => candidate.featureId === finding.featureId)
   selectFinding(finding.findingId)
@@ -223,7 +224,7 @@ async function previewRadiusChange(input, { signal } = {}) {
     || keys[1] !== 'proposedRadiusMm'
     || typeof input.findingId !== 'string'
     || typeof input.proposedRadiusMm !== 'number') {
-    throw new TypeError('INVALID_INPUT: findingId and numeric proposedRadiusMm are required.')
+    throw new WorkflowRuleError('INVALID_INPUT', 'findingId and numeric proposedRadiusMm are required.')
   }
 
   const proposal = validateRadiusProposal({
@@ -262,7 +263,7 @@ async function prepareSupplierQuotes(input, { signal } = {}) {
   abortIfRequested(signal)
   const keys = Object.keys(input ?? {})
   if (keys.length !== 1 || keys[0] !== 'quantity' || !Number.isInteger(input.quantity)) {
-    throw new TypeError('INVALID_INPUT: integer quantity is required.')
+    throw new WorkflowRuleError('INVALID_INPUT', 'integer quantity is required.')
   }
 
   const comparison = prepareQuoteComparison({
@@ -315,7 +316,7 @@ async function generateReviewPackage(input, { signal } = {}) {
   abortIfRequested(signal)
   const keys = Object.keys(input ?? {})
   if (keys.some((key) => key !== 'title')) {
-    throw new TypeError('INVALID_INPUT: only an optional title is supported.')
+    throw new WorkflowRuleError('INVALID_INPUT', 'only an optional title is supported.')
   }
 
   const reviewPackage = createReviewPackage({
@@ -415,8 +416,9 @@ function audited(toolName, summary, handler) {
       return result
     } catch (error) {
       const status = error?.name === 'AbortError' ? 'cancelled' : 'failed'
-      workflowState.errorState = status === 'failed' ? error?.message ?? 'Tool execution failed.' : null
-      recordToolCall(toolName, status, error?.message ?? 'Tool execution failed.')
+      const envelope = attachToolErrorContract(error)
+      workflowState.errorState = status === 'failed' ? envelope : null
+      recordToolCall(toolName, status, envelope.error.message)
       throw error
     }
   }

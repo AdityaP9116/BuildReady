@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 7 completes the end-to-end evidence path. After inspection, a visible human decision, and two normalized fictional quotes, ChatGPT can generate one traceable review package. The Review page and its JSON and Markdown downloads are derived from the same in-memory package, including versions, findings, evidence references, the decision, quotes, configuration hash, audit trail, and safety disclaimer.
+Gate 8 hardens the complete evidence path for adversarial and cross-route use. Tool failures now carry bounded, machine-readable error metadata; registration is state- and route-scoped with abort cleanup; supplier-derived content is explicitly untrusted; and local and deployed responses share restrictive security headers. A 14-case prompt suite covers success, invalid input, authority, premature actions, and injection-shaped requests.
 
 ## Planned challenge workflow
 
@@ -44,7 +44,7 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 7 WebMCP tools
+## Gate 8 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
@@ -93,6 +93,12 @@ Approval is intentionally absent from the WebMCP surface. The visible UI records
 ### Traceable review package
 
 `web/review-package.js` enforces the complete workflow preconditions before serializing evidence. It rejects missing or stale inspections, decisions, and quote sets; normalizes an optional title; and snapshots the visible workflow into schema version `1.0.0`. The WebMCP response stays compact while the Review page renders the full package and exports it without a second calculation.
+
+### Security and evaluation
+
+`web/error-contract.js` normalizes tool failures to `{ ok: false, error: { code, message, retryable } }` for the visible fallback console and attaches the same fields to thrown WebMCP errors. Messages are bounded, workflow errors use stable codes, stale-state failures say when retry is appropriate, and every input schema rejects unknown properties.
+
+`web/_headers` and the local uv-served development response apply the same CSP, same-origin WebMCP permissions policy, referrer isolation, MIME sniffing protection, and opener isolation. The canonical prompt suite and its manual browser matrix are documented in `tests/evals/webmcp-prompts.json` and `docs/evaluation-plan.md`.
 
 ### Controlled rule set
 

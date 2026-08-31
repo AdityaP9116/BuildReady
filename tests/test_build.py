@@ -38,6 +38,8 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((output / "quote-engine.js").is_file())
             self.assertTrue((output / "supplier-fixtures.json").is_file())
             self.assertTrue((output / "review-package.js").is_file())
+            self.assertTrue((output / "error-contract.js").is_file())
+            self.assertTrue((output / "_headers").is_file())
             self.assertTrue((output / "styles.css").is_file())
             self.assertEqual((output / "_redirects").read_text().strip(), "/* /index.html 200")
 

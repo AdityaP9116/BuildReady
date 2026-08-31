@@ -8,6 +8,13 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "web"
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), tools=(self)",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
 
 
 class SpaRequestHandler(SimpleHTTPRequestHandler):
@@ -23,6 +30,11 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
             self.path = "/index.html"
 
         super().do_GET()
+
+    def end_headers(self) -> None:
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        super().end_headers()
 
 
 def main() -> None:

@@ -14,6 +14,7 @@ import {
   webMcpAvailable,
 } from './webmcp.js'
 import { serializeReviewPackageMarkdown } from './review-package.js'
+import { toolErrorEnvelope } from './error-contract.js'
 
 const routes = {
   '/': renderDesign,
@@ -568,7 +569,7 @@ function bindManualToolControls() {
         const result = await executeGate7Tool(toolName, input)
         if (output) output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
       } catch (error) {
-        if (output) output.textContent = error?.message ?? 'Tool execution failed.'
+        if (output) output.textContent = JSON.stringify(toolErrorEnvelope(error), null, 2)
       } finally {
         button.disabled = false
       }
