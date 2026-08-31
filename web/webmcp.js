@@ -1,4 +1,4 @@
-import { gate6Handlers, setRegistrationState, workflowState } from './state.js'
+import { gate7Handlers, setRegistrationState, workflowState } from './state.js'
 import { PROPOSAL_POLICY } from './domain.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
@@ -22,7 +22,7 @@ const designContextTool = Object.freeze({
     readOnlyHint: true,
     untrustedContentHint: false,
   },
-  execute: gate6Handlers.get_active_design_context,
+  execute: gate7Handlers.get_active_design_context,
 })
 
 const inspectionTool = Object.freeze({
@@ -44,7 +44,7 @@ const inspectionTool = Object.freeze({
     readOnlyHint: true,
     untrustedContentHint: false,
   },
-  execute: gate6Handlers.inspect_cnc_manufacturability,
+  execute: gate7Handlers.inspect_cnc_manufacturability,
 })
 
 function issueDetailsTool() {
@@ -68,7 +68,7 @@ function issueDetailsTool() {
       readOnlyHint: true,
       untrustedContentHint: false,
     },
-    execute: gate6Handlers.get_issue_details,
+    execute: gate7Handlers.get_issue_details,
   })
 }
 
@@ -100,7 +100,7 @@ function radiusPreviewTool() {
       readOnlyHint: false,
       untrustedContentHint: false,
     },
-    execute: gate6Handlers.preview_radius_change,
+    execute: gate7Handlers.preview_radius_change,
   })
 }
 
@@ -124,10 +124,38 @@ const quoteComparisonTool = Object.freeze({
     readOnlyHint: true,
     untrustedContentHint: true,
   },
-  execute: gate6Handlers.prepare_quote_comparison,
+  execute: gate7Handlers.prepare_quote_comparison,
 })
 
-export function gate6Tools(route = '/design') {
+const reviewPackageTool = Object.freeze({
+  name: 'generate_review_package',
+  title: 'Generate review package',
+  description: 'Validate the complete inspected, human-reviewed, and quoted workflow state, then create one visible evidence package with JSON and Markdown downloads.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 80,
+        description: 'Optional display title for the evidence package.',
+      },
+    },
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: false,
+    untrustedContentHint: true,
+  },
+  execute: gate7Handlers.generate_review_package,
+})
+
+export function gate7Tools(route = '/design') {
+  if (route === '/suppliers') {
+    return workflowState.supplierQuotes.length === 2 && !workflowState.reviewPackage
+      ? Object.freeze([reviewPackageTool])
+      : Object.freeze([])
+  }
   if (route !== '/design') return Object.freeze([])
   const tools = [designContextTool, inspectionTool]
   if (workflowState.inspectionStatus === 'complete' && workflowState.findings.length > 0) {
@@ -170,7 +198,7 @@ export async function synchronizeWebMcpTools(route) {
 
   const controller = new AbortController()
   registrationController = controller
-  const tools = gate6Tools(route)
+  const tools = gate7Tools(route)
   if (tools.length === 0) {
     setRegistrationState('inactive', 0)
     return
@@ -199,8 +227,8 @@ export async function synchronizeWebMcpTools(route) {
   }
 }
 
-export async function executeGate6Tool(toolName, input = {}) {
-  const definition = gate6Tools(workflowState.activeRoute).find((tool) => tool.name === toolName)
+export async function executeGate7Tool(toolName, input = {}) {
+  const definition = gate7Tools(workflowState.activeRoute).find((tool) => tool.name === toolName)
   if (!definition) {
     throw new Error(`TOOL_NOT_AVAILABLE: ${toolName}`)
   }

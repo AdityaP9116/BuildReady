@@ -2,6 +2,7 @@ import { DESIGN_FIXTURE, RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js'
 import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rules.js'
 import { revisionPrecondition, validateRadiusProposal } from './workflow-rules.js'
 import { prepareQuoteComparison } from './quote-engine.js'
+import { createReviewPackage } from './review-package.js'
 
 export { DESIGN_FIXTURE }
 
@@ -310,6 +311,49 @@ async function prepareSupplierQuotes(input, { signal } = {}) {
   }
 }
 
+async function generateReviewPackage(input, { signal } = {}) {
+  abortIfRequested(signal)
+  const keys = Object.keys(input ?? {})
+  if (keys.some((key) => key !== 'title')) {
+    throw new TypeError('INVALID_INPUT: only an optional title is supported.')
+  }
+
+  const reviewPackage = createReviewPackage({
+    fixture: DESIGN_FIXTURE,
+    inspection: workflowState.inspection,
+    findings: workflowState.findings,
+    proposal: workflowState.proposedChange,
+    decisionRecord: workflowState.decisionRecord,
+    supplierRequests: workflowState.supplierRequests,
+    supplierQuotes: workflowState.supplierQuotes,
+    auditEvents: workflowState.auditEvents,
+    title: input?.title,
+    generatedAt: new Date().toISOString(),
+  })
+  abortIfRequested(signal)
+
+  workflowState.reviewPackage = reviewPackage
+  workflowState.errorState = null
+  emitStateChange()
+  requestToolAvailabilityRefresh()
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('buildready:navigate', { detail: { route: '/review' } }))
+  }, 0)
+
+  return {
+    ok: true,
+    packageId: reviewPackage.packageId,
+    title: reviewPackage.title,
+    revisionPrecondition: reviewPackage.design.revisionPrecondition,
+    configurationHash: reviewPackage.supplierComparison.configurationHash,
+    findingCount: reviewPackage.inspection.findingCount,
+    quoteCount: reviewPackage.supplierComparison.quotes.length,
+    auditEventCount: reviewPackage.auditTrail.length,
+    formats: ['json', 'markdown'],
+    nextAction: 'Review the visible package and download JSON or Markdown from the Review page.',
+  }
+}
+
 export function recordHumanDecision(decision) {
   if (!['approved', 'rejected'].includes(decision)) return false
   if (!workflowState.proposedChange || workflowState.decisionStatus !== 'pending') return false
@@ -378,7 +422,7 @@ function audited(toolName, summary, handler) {
   }
 }
 
-export const gate6Handlers = Object.freeze({
+export const gate7Handlers = Object.freeze({
   get_active_design_context: audited(
     'get_active_design_context',
     'Returned BRKT-001 revision B with five stable feature records.',
@@ -403,5 +447,10 @@ export const gate6Handlers = Object.freeze({
     'prepare_quote_comparison',
     'Prepared two normalized fictional supplier quotes for the human-reviewed configuration.',
     prepareSupplierQuotes,
+  ),
+  generate_review_package: audited(
+    'generate_review_package',
+    'Generated one traceable review package from the complete visible workflow state.',
+    generateReviewPackage,
   ),
 })

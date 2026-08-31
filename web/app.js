@@ -9,10 +9,11 @@ import {
 } from './state.js'
 import { mountBracketViewer } from './bracket-viewer.js'
 import {
-  executeGate6Tool,
+  executeGate7Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
 } from './webmcp.js'
+import { serializeReviewPackageMarkdown } from './review-package.js'
 
 const routes = {
   '/': renderDesign,
@@ -234,23 +235,69 @@ function renderSuppliers() {
         <p class="eyebrow">Balanced comparison</p>
         <h2>Cost and schedule point to different options.</h2>
         <p>AxisWorks is the modeled value option. RapidMill is the modeled schedule option. Both carry the same moderate residual design risk, so the evidence stays visible instead of declaring an automatic winner.</p>
+        <div class="proposal-actions">
+          <button type="button" data-tool="generate_review_package">Generate review package</button>
+          <a class="button-link secondary-button" href="/design" data-route>Revisit design</a>
+        </div>
+        <output class="tool-output" id="tool-output" aria-live="polite">The review package tool is ready.</output>
       </section>
     </div>
   `
 }
 
 function renderReview() {
+  const reviewPackage = workflowState.reviewPackage
+  if (!reviewPackage) {
+    return `
+      <div class="page">
+        ${pageIntro(
+          'Evidence package',
+          'Finish with a traceable manufacturing review.',
+          'Findings, the proposed correction, the human decision, supplier quotes, provenance, and the audit timeline resolve into one package.',
+        )}
+        <section class="empty-state">
+          <span>Gate 7</span>
+          <h2>No review package has been generated.</h2>
+          <p>Complete the design inspection and supplier comparison before creating the final record.</p>
+          <a class="button-link" href="/suppliers" data-route>Open supplier comparison</a>
+        </section>
+      </div>
+    `
+  }
+
   return `
     <div class="page">
       ${pageIntro(
         'Evidence package',
-        'Finish with a traceable manufacturing review.',
-        'Findings, the proposed correction, the human decision, supplier quotes, provenance, and the audit timeline will resolve into one package.',
+        reviewPackage.title,
+        'One package ties visible findings, the human decision, normalized quotes, provenance, versions, and the audit timeline to the same configuration.',
+        `<div class="part-chip"><span>Package</span><strong>${reviewPackage.packageId}</strong></div>`,
       )}
-      <section class="empty-state">
-        <span>Gate 7</span>
-        <h2>No review package has been generated.</h2>
-        <p>Complete the design inspection and supplier comparison before creating the final record.</p>
+      <aside class="compatibility-note warning-note"><strong>Demonstration evidence</strong><span>${reviewPackage.disclaimer}</span></aside>
+      <section class="review-summary-grid">
+        <article><span>Design</span><strong>${reviewPackage.design.designId}-${reviewPackage.design.revisionId}</strong><small>${reviewPackage.design.revisionPrecondition}</small></article>
+        <article><span>Findings</span><strong>${reviewPackage.inspection.findingCount}</strong><small>${reviewPackage.inspection.counts.high} high · ${reviewPackage.inspection.counts.medium} medium</small></article>
+        <article><span>Decision</span><strong>${reviewPackage.decision.decision}</strong><small>Actor: ${reviewPackage.decision.actor}</small></article>
+        <article><span>Quotes</span><strong>${reviewPackage.supplierComparison.quotes.length}</strong><small>${reviewPackage.supplierComparison.configurationHash}</small></article>
+      </section>
+      <section class="review-section">
+        <div class="review-section-heading"><div><p class="eyebrow">Inspection evidence</p><h2>Deterministic findings</h2></div><code>${reviewPackage.versions.cncRuleSet}</code></div>
+        <div class="review-finding-list">${reviewPackage.inspection.findings.map((finding) => `
+          <article><span data-severity="${finding.severity}">${finding.severity}</span><div><strong>${finding.ruleId} · ${finding.title}</strong><p>${finding.calculation}</p><small>${finding.featureId}</small></div></article>
+        `).join('')}</div>
+      </section>
+      <section class="review-section">
+        <div class="review-section-heading"><div><p class="eyebrow">Commercial model</p><h2>Normalized quotes</h2></div><code>${reviewPackage.supplierComparison.configurationHash}</code></div>
+        <div class="review-quote-list">${reviewPackage.supplierComparison.quotes.map((quote) => `
+          <article><strong>${quote.supplierName}</strong><span>${quote.currency} ${quote.totalPrice.toFixed(2)}</span><small>${quote.leadTimeDays} days · ${quote.quantity} parts</small></article>
+        `).join('')}</div>
+      </section>
+      <section class="review-section audit-download-section">
+        <div><p class="eyebrow">Portable evidence</p><h2>Download the exact visible package.</h2><p>JSON preserves structured records; Markdown provides a readable review artifact.</p></div>
+        <div class="proposal-actions">
+          <button type="button" data-download="json">Download JSON</button>
+          <button type="button" class="secondary-button" data-download="markdown">Download Markdown</button>
+        </div>
       </section>
     </div>
   `
@@ -270,8 +317,8 @@ function renderAbout() {
         <article><span>03</span><h2>Safe demonstration</h2><p>The challenge path uses controlled fixtures and makes no production-readiness claim.</p></article>
       </section>
       <section class="testing-instructions">
-        <h2>Testing the Gate 6 comparison path</h2>
-        <p>Run the inspection, preview the 3.5 mm radius, record a visible human decision, then call <code>prepare_quote_comparison</code> with quantity 1000. Confirm two reproducible fictional quotes appear with different price, schedule, assumptions, and DFM notes.</p>
+        <h2>Testing the Gate 7 evidence path</h2>
+        <p>Complete the inspected, human-reviewed, and quoted flow, then call <code>generate_review_package</code>. Confirm the Review page matches the visible workflow and both JSON and Markdown downloads contain the package ID, versions, findings, decision, quotes, audit trail, and disclaimer.</p>
       </section>
     </div>
   `
@@ -475,6 +522,23 @@ function bindWorkflowControls() {
     const output = document.querySelector('#tool-output')
     if (output) output.textContent = 'Demo reset to the original BRKT-001-B fixture.'
   })
+
+  document.querySelectorAll('[data-download]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!workflowState.reviewPackage) return
+      const format = button.dataset.download
+      const isJson = format === 'json'
+      const contents = isJson
+        ? JSON.stringify(workflowState.reviewPackage, null, 2)
+        : serializeReviewPackageMarkdown(workflowState.reviewPackage)
+      const blob = new Blob([contents], { type: isJson ? 'application/json' : 'text/markdown' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `${workflowState.reviewPackage.packageId}.${isJson ? 'json' : 'md'}`
+      link.click()
+      URL.revokeObjectURL(link.href)
+    })
+  })
 }
 
 function bindManualToolControls() {
@@ -493,16 +557,18 @@ function bindManualToolControls() {
             }
           : toolName === 'prepare_quote_comparison'
             ? { quantity: DESIGN_FIXTURE.quantity }
+          : toolName === 'generate_review_package'
+            ? { title: `${DESIGN_FIXTURE.designId}-${DESIGN_FIXTURE.revisionId} Manufacturing Review` }
           : {}
 
       button.disabled = true
-      output.textContent = `Calling ${toolName}…`
+      if (output) output.textContent = `Calling ${toolName}…`
 
       try {
-        const result = await executeGate6Tool(toolName, input)
-        output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+        const result = await executeGate7Tool(toolName, input)
+        if (output) output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
       } catch (error) {
-        output.textContent = error?.message ?? 'Tool execution failed.'
+        if (output) output.textContent = error?.message ?? 'Tool execution failed.'
       } finally {
         button.disabled = false
       }

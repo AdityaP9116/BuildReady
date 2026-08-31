@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 6 adds a reproducible supplier comparison after the Gate 5 human authority boundary. Once the visible engineer approves or rejects the radius preview, ChatGPT can calculate normalized quotes from the fictional AxisWorks and RapidMill fixtures. Each quote carries a configuration hash, price breakdown, lead time, assumptions, DFM notes, and an explicit demonstration-data disclaimer.
+Gate 7 completes the end-to-end evidence path. After inspection, a visible human decision, and two normalized fictional quotes, ChatGPT can generate one traceable review package. The Review page and its JSON and Markdown downloads are derived from the same in-memory package, including versions, findings, evidence references, the decision, quotes, configuration hash, audit trail, and safety disclaimer.
 
 ## Planned challenge workflow
 
@@ -44,7 +44,7 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 6 WebMCP tools
+## Gate 7 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
@@ -53,6 +53,7 @@ uv run python scripts/build.py
 | `get_issue_details` | `/design`, after inspection | Returns one finding's deterministic measurements, threshold, calculation, consequence, recommendation, evidence references, and 3D highlight target. Selecting it focuses the same feature in the canvas and text panel. |
 | `preview_radius_change` | `/design`, after the corner finding and before a proposal exists | Prepares a 3.5–5.0 mm inside-radius preview with before/after geometry and a pending human decision. It cannot approve, reject, or commit the proposal. |
 | `prepare_quote_comparison` | `/design`, after a visible human decision and before quotes exist | Calculates two normalized fictional supplier quotes for a supported quantity. Supplier assumptions and DFM notes are marked as untrusted content. |
+| `generate_review_package` | `/suppliers`, after two quotes and before a package exists | Validates completeness and creates a traceable evidence package. Its compact tool response points to the full visible Review page and JSON/Markdown downloads. |
 
 The tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Handlers receive and respect the execution `AbortSignal`.
 
@@ -68,6 +69,8 @@ To test manually in a WebMCP-capable browser:
 8. Confirm the tool disappears while the proposal is pending and that no approval or commit tool exists.
 9. Use the visible Approve preview or Reject control and confirm the audit actor is human.
 10. Confirm `prepare_quote_comparison` appears, call it with `{ "quantity": 1000 }`, and verify the app opens `/suppliers` with two visibly different quotes.
+11. Confirm only `generate_review_package` is exposed on `/suppliers`, generate the package, and verify the app opens `/review` with five findings and two quotes.
+12. Download JSON and Markdown and confirm both carry the same package ID and configuration hash shown on the page.
 
 Standard browsers can execute the same handlers through the diagnostic panel's manual controls.
 
@@ -86,6 +89,10 @@ Approval is intentionally absent from the WebMCP surface. The visible UI records
 ### Controlled supplier comparison
 
 `web/supplier-fixtures.json` defines two explicitly fictional suppliers and four supported quantities. `web/quote-engine.js` validates the human decision and revision preconditions, computes normalized totals, and produces the same FNV-1a configuration hash for identical inputs. AxisWorks models the lower-cost option while RapidMill models the faster option; the UI preserves each supplier's assumptions and residual DFM notes instead of choosing a winner.
+
+### Traceable review package
+
+`web/review-package.js` enforces the complete workflow preconditions before serializing evidence. It rejects missing or stale inspections, decisions, and quote sets; normalizes an optional title; and snapshots the visible workflow into schema version `1.0.0`. The WebMCP response stays compact while the Review page renders the full package and exports it without a second calculation.
 
 ### Controlled rule set
 
