@@ -99,6 +99,13 @@ const FOCUS_TARGETS = Object.freeze({
   'mounting-hole-tolerance': Object.freeze({ x: 1.8, y: 3, z: 1 }),
 })
 
+const POCKET_CORNER_POINTS = Object.freeze([
+  Object.freeze([-2.45, -1.4, 1.48]),
+  Object.freeze([2.45, -1.4, 1.48]),
+  Object.freeze([-2.45, 1.4, 1.48]),
+  Object.freeze([2.45, 1.4, 1.48]),
+])
+
 function pointInPolygon(point, polygon) {
   let inside = false
   for (let current = 0, previous = polygon.length - 1; current < polygon.length; previous = current, current += 1) {
@@ -130,6 +137,7 @@ export class BracketViewer {
     this.meshes = createParametricBracketScene()
     this.featureLabels = new Map(fixture.features.map((feature) => [feature.featureId, feature.label]))
     this.issueSeverities = new Map()
+    this.proposal = null
     this.selectedFeatureId = fixture.features.find((feature) => feature.selected)?.featureId ?? null
     this.hoveredFeatureId = null
     this.renderedFeatureFaces = []
@@ -259,6 +267,37 @@ export class BracketViewer {
       context.stroke()
       if (mesh.featureId) this.renderedFeatureFaces.push({ featureId: mesh.featureId, polygon })
     })
+    this.drawProposal(context)
+  }
+
+  drawProposal(context) {
+    if (!this.proposal) return
+    const beforeRadius = this.proposal.before.insideRadiusMm * 4
+    const afterRadius = this.proposal.after.insideRadiusMm * 4
+    const previewColor = this.proposal.status === 'rejected' ? '#8da39b' : '#78f0b0'
+    context.save()
+    POCKET_CORNER_POINTS.forEach((corner) => {
+      const point = this.project(corner)
+      context.beginPath()
+      context.arc(point.x, point.y, beforeRadius, 0, Math.PI * 2)
+      context.strokeStyle = '#ff7e78'
+      context.lineWidth = 1.5
+      context.setLineDash([])
+      context.stroke()
+      context.beginPath()
+      context.arc(point.x, point.y, afterRadius, 0, Math.PI * 2)
+      context.strokeStyle = previewColor
+      context.lineWidth = 2
+      context.setLineDash([6, 4])
+      context.stroke()
+    })
+    const labelPoint = this.project([0, -1.4, 2.25])
+    context.setLineDash([])
+    context.fillStyle = previewColor
+    context.font = '700 12px ui-monospace, monospace'
+    context.textAlign = 'center'
+    context.fillText(`PREVIEW R${this.proposal.after.insideRadiusMm} mm`, labelPoint.x, labelPoint.y)
+    context.restore()
   }
 
   drawGrid(context) {
@@ -334,6 +373,11 @@ export class BracketViewer {
 
   setFindings(findings) {
     this.issueSeverities = new Map(findings.map((finding) => [finding.featureId, finding.severity]))
+    this.render()
+  }
+
+  setProposal(proposal) {
+    this.proposal = proposal
     this.render()
   }
 

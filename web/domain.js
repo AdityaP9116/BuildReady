@@ -48,3 +48,4 @@ export const DESIGN_FIXTURE = DOMAIN_DATA.design
 export const CNC_RULES = DOMAIN_DATA.rules
 export const RULE_SET_VERSION = DOMAIN_DATA.ruleSetVersion
 export const RULE_SET_SCOPE = DOMAIN_DATA.ruleSetScope
+export const PROPOSAL_POLICY = DOMAIN_DATA.proposalPolicy

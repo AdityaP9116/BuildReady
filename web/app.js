@@ -1,7 +1,15 @@
-import { DESIGN_FIXTURE, selectFeature, selectFinding, workflowState, setActiveRoute } from './state.js'
+import {
+  DESIGN_FIXTURE,
+  recordHumanDecision,
+  resetDemoState,
+  selectFeature,
+  selectFinding,
+  workflowState,
+  setActiveRoute,
+} from './state.js'
 import { mountBracketViewer } from './bracket-viewer.js'
 import {
-  executeGate4Tool,
+  executeGate5Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
 } from './webmcp.js'
@@ -53,7 +61,7 @@ function renderAgentConsole() {
     <section class="agent-console" aria-labelledby="agent-console-title">
       <div class="agent-console-heading">
         <div>
-          <p class="eyebrow">Gate 4 diagnostics</p>
+          <p class="eyebrow">Gate 5 diagnostics</p>
           <h2 id="agent-console-title">Agent-ready WebMCP surface</h2>
         </div>
         <span class="registration-badge" id="registration-badge">Checking</span>
@@ -69,6 +77,8 @@ function renderAgentConsole() {
         <button type="button" data-tool="get_active_design_context">Read design context</button>
         <button type="button" class="secondary-button" data-tool="inspect_cnc_manufacturability">Run CNC inspection</button>
         <button type="button" class="secondary-button" id="issue-details-button" data-tool="get_issue_details" disabled>Explain selected issue</button>
+        <button type="button" class="secondary-button" id="preview-radius-button" data-tool="preview_radius_change" disabled>Preview 3.5 mm radius</button>
+        <button type="button" class="quiet-button" id="reset-demo-button">Reset demo</button>
       </div>
 
       <output class="tool-output" id="tool-output" aria-live="polite">No tool output yet.</output>
@@ -130,13 +140,34 @@ function renderDesign() {
           ${stageCard('01', 'Read design context', 'The live WebMCP tool exposes the active part, process, quantity, revision, and selected feature.', 'ready')}
           ${stageCard('02', 'Inspect manufacturability', 'Five deterministic rules now measure the revision-B corner, pocket, wall, drilled hole, and tolerance features.', 'ready')}
           ${stageCard('03', 'Focus visual evidence', 'Issue selection, hover, camera focus, measurements, and keyboard alternatives stay synchronized with agent calls.', 'ready')}
-          ${stageCard('04', 'Preview a correction', 'Show a bounded radius change without committing it for the engineer.')}
+          ${stageCard('04', 'Preview a correction', 'Prepare bounded before/after geometry while revision B remains unchanged.', 'ready')}
+          ${stageCard('05', 'Record human authority', 'Only the visible engineer controls can approve or reject the pending preview.', 'ready')}
         </div>
       </section>
       <aside class="compatibility-note">
         <strong>Controlled evidence</strong>
         <span>The tools register only on this route. After inspection, issue details become available and focus the same stable feature in the model and text evidence.</span>
       </aside>
+      <section class="proposal-card" id="proposal-card" aria-labelledby="proposal-title" hidden>
+        <div class="proposal-heading">
+          <div>
+            <p class="eyebrow">Human decision required</p>
+            <h2 id="proposal-title">Inside-radius preview</h2>
+          </div>
+          <span id="proposal-status">Pending</span>
+        </div>
+        <div class="proposal-comparison">
+          <div><span>Before</span><strong id="proposal-before">1.0 mm</strong><small>Revision B fixture</small></div>
+          <div aria-hidden="true">→</div>
+          <div><span>After</span><strong id="proposal-after">3.5 mm</strong><small>Non-destructive preview</small></div>
+        </div>
+        <p id="proposal-effect"></p>
+        <div class="proposal-actions">
+          <button type="button" id="approve-proposal">Approve preview</button>
+          <button type="button" class="secondary-button" id="reject-proposal">Reject</button>
+        </div>
+        <p class="authority-note">These are human-only controls. No WebMCP tool can approve, reject, or commit geometry.</p>
+      </section>
       ${renderAgentConsole()}
     </div>
   `
@@ -190,8 +221,8 @@ function renderAbout() {
         <article><span>03</span><h2>Safe demonstration</h2><p>The challenge path uses controlled fixtures and makes no production-readiness claim.</p></article>
       </section>
       <section class="testing-instructions">
-        <h2>Testing the Gate 4 tools</h2>
-        <p>Open <strong>/design</strong> in a WebMCP-capable browser. Run <code>inspect_cnc_manufacturability</code>, confirm all five model features highlight, then call <code>get_issue_details</code> with a current finding ID and verify the model and measurement panel focus together.</p>
+        <h2>Testing the Gate 5 authority boundary</h2>
+        <p>Run the inspection, call <code>preview_radius_change</code> for the corner finding, and confirm the page shows ghosted before/after geometry. The tool must stop at a pending state; only the visible Approve preview or Reject button can record a human decision.</p>
       </section>
     </div>
   `
@@ -299,6 +330,25 @@ function renderFindings(findingCount, findingsList) {
   })
 }
 
+function renderProposal() {
+  const panel = document.querySelector('#proposal-card')
+  if (!panel) return
+  const proposal = workflowState.proposedChange
+  panel.hidden = !proposal
+  bracketViewer?.setProposal(proposal)
+  if (!proposal) return
+
+  document.querySelector('#proposal-before').textContent = `${proposal.before.insideRadiusMm} mm`
+  document.querySelector('#proposal-after').textContent = `${proposal.after.insideRadiusMm} mm`
+  document.querySelector('#proposal-effect').textContent = proposal.expectedCostEffect
+  const status = document.querySelector('#proposal-status')
+  status.textContent = workflowState.decisionStatus.replace('_', ' ')
+  status.dataset.status = workflowState.decisionStatus
+  const pending = workflowState.decisionStatus === 'pending'
+  document.querySelector('#approve-proposal').disabled = !pending
+  document.querySelector('#reject-proposal').disabled = !pending
+}
+
 function updateDiagnostics() {
   const available = webMcpAvailable()
   webMcpStatus.classList.toggle('supported', available)
@@ -313,6 +363,7 @@ function updateDiagnostics() {
   const findingCount = document.querySelector('#finding-count')
   const findingsList = document.querySelector('#findings-list')
   const issueDetailsButton = document.querySelector('#issue-details-button')
+  const previewRadiusButton = document.querySelector('#preview-radius-button')
 
   if (!activeRoute || !toolCount || !lastCall || !registrationBadge || !auditEvents) {
     return
@@ -334,9 +385,14 @@ function updateDiagnostics() {
 
   if (findingCount && findingsList) renderFindings(findingCount, findingsList)
   if (issueDetailsButton) issueDetailsButton.disabled = !workflowState.selectedFindingId
+  if (previewRadiusButton) {
+    previewRadiusButton.disabled = !workflowState.findings.some((finding) => finding.ruleId === 'CNC-R001')
+      || Boolean(workflowState.proposedChange)
+  }
   bracketViewer?.setFindings(workflowState.findings)
   bracketViewer?.selectFeature(workflowState.selectedFeatureId)
   renderViewerSelection()
+  renderProposal()
 }
 
 function bindBracketViewer() {
@@ -348,7 +404,23 @@ function bindBracketViewer() {
   document.querySelector('#reset-camera')?.addEventListener('click', () => bracketViewer?.resetCamera())
   bracketViewer.setFindings(workflowState.findings)
   bracketViewer.selectFeature(workflowState.selectedFeatureId)
+  bracketViewer.setProposal(workflowState.proposedChange)
   renderViewerSelection()
+}
+
+function bindWorkflowControls() {
+  document.querySelector('#approve-proposal')?.addEventListener('click', () => {
+    recordHumanDecision('approved')
+  })
+  document.querySelector('#reject-proposal')?.addEventListener('click', () => {
+    recordHumanDecision('rejected')
+  })
+  document.querySelector('#reset-demo-button')?.addEventListener('click', () => {
+    resetDemoState()
+    bracketViewer?.resetCamera()
+    const output = document.querySelector('#tool-output')
+    if (output) output.textContent = 'Demo reset to the original BRKT-001-B fixture.'
+  })
 }
 
 function bindManualToolControls() {
@@ -360,13 +432,18 @@ function bindManualToolControls() {
         ? { severity: 'all' }
         : toolName === 'get_issue_details'
           ? { findingId: workflowState.selectedFindingId }
+          : toolName === 'preview_radius_change'
+            ? {
+              findingId: workflowState.findings.find((finding) => finding.ruleId === 'CNC-R001')?.findingId,
+              proposedRadiusMm: 3.5,
+            }
           : {}
 
       button.disabled = true
       output.textContent = `Calling ${toolName}…`
 
       try {
-        const result = await executeGate4Tool(toolName, input)
+        const result = await executeGate5Tool(toolName, input)
         output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
       } catch (error) {
         output.textContent = error?.message ?? 'Tool execution failed.'
@@ -412,6 +489,7 @@ async function renderRoute() {
   setActiveRoute(path)
   if (path === '/design') bindBracketViewer()
   bindManualToolControls()
+  bindWorkflowControls()
   updateDiagnostics()
   await synchronizeWebMcpTools(path)
   app.focus({ preventScroll: true })

@@ -1,5 +1,6 @@
 import { DESIGN_FIXTURE, RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js'
 import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rules.js'
+import { revisionPrecondition, validateRadiusProposal } from './workflow-rules.js'
 
 export { DESIGN_FIXTURE }
 
@@ -47,12 +48,12 @@ export function setRegistrationState(status, toolCount = 0) {
   emitStateChange()
 }
 
-export function recordToolCall(toolName, status, summary) {
+export function appendAuditEvent(actor, actionName, status, summary) {
   eventSequence += 1
   const event = {
     eventId: `audit-${String(eventSequence).padStart(3, '0')}`,
-    actor: 'agent_or_manual_test',
-    toolName,
+    actor,
+    toolName: actionName,
     status,
     summary,
     timestamp: new Date().toISOString(),
@@ -61,6 +62,11 @@ export function recordToolCall(toolName, status, summary) {
   workflowState.lastToolCall = event
   workflowState.auditEvents = [...workflowState.auditEvents.slice(-9), event]
   emitStateChange()
+  return event
+}
+
+export function recordToolCall(toolName, status, summary) {
+  return appendAuditEvent('agent_or_manual_test', toolName, status, summary)
 }
 
 function abortIfRequested(signal) {
@@ -151,15 +157,14 @@ async function inspectCncManufacturability(input, { signal } = {}) {
   workflowState.findings = [...inspection.findings]
   workflowState.selectedFindingId = inspection.findings[0]?.findingId ?? null
   workflowState.selectedFeatureId = inspection.findings[0]?.featureId ?? workflowState.selectedFeatureId
+  workflowState.proposedChange = null
+  workflowState.decisionStatus = 'not_requested'
+  workflowState.decisionRecord = null
   workflowState.errorState = null
   emitStateChange()
   requestToolAvailabilityRefresh()
 
   return compactInspectionResult(inspection, generatedAt)
-}
-
-function currentRevisionPrecondition() {
-  return `${DESIGN_FIXTURE.designId}/${DESIGN_FIXTURE.revisionId}@${DESIGN_FIXTURE.fixtureVersion}`
 }
 
 async function getIssueDetails(input, { signal } = {}) {
@@ -171,7 +176,7 @@ async function getIssueDetails(input, { signal } = {}) {
   if (workflowState.inspectionStatus !== 'complete' || !workflowState.inspection) {
     throw new Error('INSPECTION_REQUIRED: run inspect_cnc_manufacturability first.')
   }
-  if (workflowState.inspection.revisionPrecondition !== currentRevisionPrecondition()) {
+  if (workflowState.inspection.revisionPrecondition !== revisionPrecondition(DESIGN_FIXTURE)) {
     throw new Error('STALE_INSPECTION: re-run inspection for the active revision.')
   }
 
@@ -208,6 +213,102 @@ async function getIssueDetails(input, { signal } = {}) {
   }
 }
 
+async function previewRadiusChange(input, { signal } = {}) {
+  abortIfRequested(signal)
+  const keys = Object.keys(input ?? {}).sort()
+  if (keys.length !== 2
+    || keys[0] !== 'findingId'
+    || keys[1] !== 'proposedRadiusMm'
+    || typeof input.findingId !== 'string'
+    || typeof input.proposedRadiusMm !== 'number') {
+    throw new TypeError('INVALID_INPUT: findingId and numeric proposedRadiusMm are required.')
+  }
+
+  const proposal = validateRadiusProposal({
+    fixture: DESIGN_FIXTURE,
+    inspection: workflowState.inspection,
+    findings: workflowState.findings,
+    existingProposal: workflowState.proposedChange,
+    findingId: input.findingId,
+    proposedRadiusMm: input.proposedRadiusMm,
+  })
+  abortIfRequested(signal)
+
+  const generatedAt = new Date().toISOString()
+  workflowState.proposedChange = { ...proposal, generatedAt }
+  workflowState.decisionStatus = 'pending'
+  workflowState.decisionRecord = null
+  selectFinding(proposal.findingId)
+  requestToolAvailabilityRefresh()
+
+  return {
+    ok: true,
+    proposalId: proposal.proposalId,
+    revisionPrecondition: proposal.revisionPrecondition,
+    featureId: proposal.featureId,
+    before: proposal.before,
+    after: proposal.after,
+    expectedRuleResolution: proposal.expectedRuleResolution,
+    expectedCostEffect: proposal.expectedCostEffect,
+    approvalRequired: true,
+    approvalMode: proposal.approvalMode,
+    status: 'pending_human_decision',
+  }
+}
+
+export function recordHumanDecision(decision) {
+  if (!['approved', 'rejected'].includes(decision)) return false
+  if (!workflowState.proposedChange || workflowState.decisionStatus !== 'pending') return false
+  if (workflowState.proposedChange.revisionPrecondition !== revisionPrecondition(DESIGN_FIXTURE)) {
+    workflowState.proposedChange = { ...workflowState.proposedChange, status: 'stale' }
+    workflowState.decisionStatus = 'stale'
+    emitStateChange()
+    requestToolAvailabilityRefresh()
+    return false
+  }
+
+  const timestamp = new Date().toISOString()
+  const decisionRecord = {
+    decisionId: `decision-${workflowState.proposedChange.proposalId}-${decision}`,
+    proposalId: workflowState.proposedChange.proposalId,
+    decision,
+    actor: 'human',
+    revisionPrecondition: revisionPrecondition(DESIGN_FIXTURE),
+    timestamp,
+  }
+  workflowState.decisionStatus = decision
+  workflowState.decisionRecord = decisionRecord
+  workflowState.proposedChange = { ...workflowState.proposedChange, status: decision }
+  appendAuditEvent(
+    'human',
+    `${decision}_radius_preview`,
+    'completed',
+    `Human ${decision} proposal ${decisionRecord.proposalId}; revision B remains unchanged.`,
+  )
+  requestToolAvailabilityRefresh()
+  return true
+}
+
+export function resetDemoState() {
+  workflowState.selectedFeatureId = DESIGN_FIXTURE.features.find((feature) => feature.selected)?.featureId ?? null
+  workflowState.inspectionStatus = 'not_run'
+  workflowState.inspection = null
+  workflowState.findings = []
+  workflowState.selectedFindingId = null
+  workflowState.proposedChange = null
+  workflowState.decisionStatus = 'not_requested'
+  workflowState.decisionRecord = null
+  workflowState.supplierRequests = []
+  workflowState.supplierQuotes = []
+  workflowState.reviewPackage = null
+  workflowState.lastToolCall = null
+  workflowState.auditEvents = []
+  workflowState.errorState = null
+  eventSequence = 0
+  emitStateChange()
+  requestToolAvailabilityRefresh()
+}
+
 function audited(toolName, summary, handler) {
   return async (input, options = {}) => {
     try {
@@ -223,7 +324,7 @@ function audited(toolName, summary, handler) {
   }
 }
 
-export const gate4Handlers = Object.freeze({
+export const gate5Handlers = Object.freeze({
   get_active_design_context: audited(
     'get_active_design_context',
     'Returned BRKT-001 revision B with five stable feature records.',
@@ -238,5 +339,10 @@ export const gate4Handlers = Object.freeze({
     'get_issue_details',
     'Focused one deterministic finding and displayed its measurements.',
     getIssueDetails,
+  ),
+  preview_radius_change: audited(
+    'preview_radius_change',
+    'Prepared a bounded non-destructive radius preview requiring a visible human decision.',
+    previewRadiusChange,
   ),
 })

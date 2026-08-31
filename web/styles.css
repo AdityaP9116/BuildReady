@@ -54,6 +54,17 @@ button,
   text-decoration: none;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.quiet-button {
+  border-color: var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+
 .app-shell {
   min-height: 100vh;
 }
@@ -499,6 +510,107 @@ h1 {
   background: var(--panel);
 }
 
+.proposal-card {
+  margin-top: 1rem;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  border: 1px solid rgb(120 240 176 / 40%);
+  border-radius: 0.9rem;
+  background: linear-gradient(140deg, rgb(27 54 44 / 95%), rgb(13 24 20 / 95%));
+}
+
+.proposal-card[hidden] {
+  display: none;
+}
+
+.proposal-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.proposal-heading h2 {
+  margin: 0;
+}
+
+#proposal-status {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--amber);
+  border-radius: 999px;
+  color: var(--amber);
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#proposal-status[data-status='approved'] {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+
+#proposal-status[data-status='rejected'] {
+  border-color: #ff9c97;
+  color: #ff9c97;
+}
+
+.proposal-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0 1rem;
+}
+
+.proposal-comparison > div:not([aria-hidden]) {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: var(--bg);
+}
+
+.proposal-comparison span,
+.proposal-comparison strong,
+.proposal-comparison small {
+  display: block;
+}
+
+.proposal-comparison span,
+.proposal-comparison small {
+  color: var(--muted);
+}
+
+.proposal-comparison span {
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.proposal-comparison strong {
+  margin: 0.3rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.5rem;
+}
+
+#proposal-effect,
+.authority-note {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.authority-note {
+  margin: 1rem 0 0;
+  font-size: 0.78rem;
+}
+
 .agent-console-heading {
   display: flex;
   align-items: start;
@@ -859,6 +971,15 @@ h1 {
 
   .measurement-panel dl {
     grid-template-columns: 1fr;
+  }
+
+  .proposal-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .proposal-comparison > div[aria-hidden] {
+    transform: rotate(90deg);
+    text-align: center;
   }
 
   .audit-panel li {

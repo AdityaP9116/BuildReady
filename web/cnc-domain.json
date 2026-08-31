@@ -2,6 +2,16 @@
   "schemaVersion": "1.0.0",
   "ruleSetVersion": "cnc-demo-1.0.0",
   "ruleSetScope": "Controlled demonstration thresholds; not production machining guidance.",
+  "proposalPolicy": {
+    "policyVersion": "radius-preview-1.0.0",
+    "featureId": "inside-pocket-corner",
+    "ruleId": "CNC-R001",
+    "minimumRadiusMm": 3.5,
+    "maximumRadiusMm": 5.0,
+    "recommendedRadiusMm": 3.5,
+    "approvalMode": "visible-human-only",
+    "geometryMode": "non-destructive-session-preview"
+  },
   "design": {
     "designId": "BRKT-001",
     "revisionId": "B",

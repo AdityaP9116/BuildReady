@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 4 adds synchronized visual evidence to the deterministic manufacturability engine. The `/design` route renders a dependency-free parametric bracket, maps five stable feature IDs to interactive meshes, highlights findings by severity, focuses selected evidence, and conditionally exposes issue details through WebMCP. Approval, supplier fixtures, and review-package generation follow in later gates.
+Gate 5 adds a bounded, non-destructive radius preview and an explicit human authority boundary. ChatGPT can prepare the controlled geometry proposal, but only the visible engineer controls can approve or reject it. Revision B remains unchanged, and every decision is recorded with a human actor in the audit trail. Supplier fixtures and review-package generation follow in later gates.
 
 ## Planned challenge workflow
 
@@ -44,13 +44,14 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 4 WebMCP tools
+## Gate 5 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
 | `get_active_design_context` | `/design` | Returns the controlled BRKT-001 revision B context, material, process, quantity, selected feature, preview state, inspection state, and rule-set version. |
 | `inspect_cnc_manufacturability` | `/design` | Evaluates internal corner radius, pocket aspect ratio, thin-wall thickness, drilled-hole depth ratio, and mounting-hole tolerance against versioned demonstration thresholds. Returns five stable findings for the default fixture. |
 | `get_issue_details` | `/design`, after inspection | Returns one finding's deterministic measurements, threshold, calculation, consequence, recommendation, evidence references, and 3D highlight target. Selecting it focuses the same feature in the canvas and text panel. |
+| `preview_radius_change` | `/design`, after the corner finding and before a proposal exists | Prepares a 3.5–5.0 mm inside-radius preview with before/after geometry and a pending human decision. It cannot approve, reject, or commit the proposal. |
 
 Both tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Both handlers receive and respect the execution `AbortSignal`.
 
@@ -62,6 +63,9 @@ To test manually in a WebMCP-capable browser:
 4. Execute `inspect_cnc_manufacturability` with `{ "severity": "all" }`.
 5. Confirm five issue rows and model highlights appear, and that `get_issue_details` becomes the third registered tool.
 6. Call `get_issue_details` with a current finding ID and confirm the model, measurement panel, selected text row, and audit entry focus together.
+7. Call `preview_radius_change` with the corner finding and a radius between 3.5 and 5.0 mm.
+8. Confirm the tool disappears while the proposal is pending and that no approval or commit tool exists.
+9. Use the visible Approve preview or Reject control and confirm the audit actor is human.
 
 Standard browsers can execute the same handlers through the diagnostic panel's manual controls.
 
@@ -70,6 +74,12 @@ Standard browsers can execute the same handlers through the diagnostic panel's m
 `web/bracket-viewer.js` is a small browser-native 3D renderer with no npm dependency. It builds cuboid and ring meshes from numeric parameters, projects them into an isometric canvas scene, depth-sorts polygon faces, and performs feature hit testing. The stable feature-to-mesh map is exported for contract verification.
 
 The canvas supports pointer hover and selection, animated feature focus, arrow-key feature navigation, Home/Escape camera reset, reduced-motion preferences, and a text measurement alternative. Finding rows are keyboard-accessible buttons, and severity is communicated through labels as well as color.
+
+### Human authority boundary
+
+The proposal policy lives in `web/cnc-domain.json` and is enforced by pure validation in `web/workflow-rules.js`. The preview is constrained to the current corner finding, the active revision precondition, and a 3.5–5.0 mm range. Repeated pending proposals, stale inspections, invalid values, and cancelled execution fail before workflow state changes.
+
+Approval is intentionally absent from the WebMCP surface. The visible UI records an `approved` or `rejected` decision with actor `human`; the original BRKT-001-B fixture remains authoritative. Resetting the demo invalidates and clears the inspection, proposal, decision, and related audit state.
 
 ### Controlled rule set
 

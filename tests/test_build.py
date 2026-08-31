@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from html.parser import HTMLParser
@@ -33,6 +34,7 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((output / "cnc-rules.js").is_file())
             self.assertTrue((output / "cnc-domain.json").is_file())
             self.assertTrue((output / "bracket-viewer.js").is_file())
+            self.assertTrue((output / "workflow-rules.js").is_file())
             self.assertTrue((output / "styles.css").is_file())
             self.assertEqual((output / "_redirects").read_text().strip(), "/* /index.html 200")
 
@@ -52,15 +54,16 @@ class BuildTests(unittest.TestCase):
         for route in ("/design", "/suppliers", "/review", "/about"):
             self.assertIn(f"'{route}'", javascript)
 
-    def test_gate_four_webmcp_contracts_are_present(self) -> None:
+    def test_gate_five_webmcp_contracts_are_present(self) -> None:
         domain = (ROOT / "web" / "cnc-domain.json").read_text(encoding="utf-8")
+        domain_data = json.loads(domain)
         rules = (ROOT / "web" / "cnc-rules.js").read_text(encoding="utf-8")
         webmcp = (ROOT / "web" / "webmcp.js").read_text(encoding="utf-8")
 
         self.assertIn('"designId": "BRKT-001"', domain)
         self.assertIn('"revisionId": "B"', domain)
         self.assertIn('"ruleSetVersion": "cnc-demo-1.0.0"', domain)
-        self.assertEqual(domain.count('"ruleId": "CNC-R'), 5)
+        self.assertEqual(len(domain_data["rules"]), 5)
         for evaluator in (
             "evaluateInternalCornerRadius",
             "evaluatePocketAspectRatio",
@@ -72,20 +75,24 @@ class BuildTests(unittest.TestCase):
         self.assertIn("get_active_design_context", webmcp)
         self.assertIn("inspect_cnc_manufacturability", webmcp)
         self.assertIn("get_issue_details", webmcp)
+        self.assertIn("preview_radius_change", webmcp)
         self.assertIn("workflowState.inspectionStatus === 'complete'", webmcp)
         self.assertIn("enum: workflowState.findings.map", webmcp)
         self.assertEqual(webmcp.count("readOnlyHint: true"), 3)
-        self.assertEqual(webmcp.count("untrustedContentHint: false"), 3)
+        self.assertEqual(webmcp.count("readOnlyHint: false"), 1)
+        self.assertEqual(webmcp.count("untrustedContentHint: false"), 4)
+        self.assertNotIn("name: 'approve", webmcp)
+        self.assertNotIn("name: 'commit", webmcp)
         self.assertIn("new AbortController()", webmcp)
         self.assertIn("modelContext.registerTool(tool, { signal: controller.signal })", webmcp)
         self.assertIn("registrationController?.abort()", webmcp)
         self.assertIn("modelContext.executeTool(registeredTool, input)", webmcp)
         self.assertNotIn("executeTool(registeredTool, JSON.stringify(input))", webmcp)
 
-    def test_gate_four_calls_findings_and_text_evidence_are_visible(self) -> None:
+    def test_gate_five_authority_controls_are_visible_and_human_only(self) -> None:
         javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
-        self.assertIn("Gate 4 diagnostics", javascript)
+        self.assertIn("Gate 5 diagnostics", javascript)
         self.assertIn("Visible call history", javascript)
         self.assertIn("Deterministic findings", javascript)
         self.assertIn('id="bracket-canvas" tabindex="0" role="img"', javascript)
@@ -94,6 +101,11 @@ class BuildTests(unittest.TestCase):
         self.assertIn('data-tool="get_active_design_context"', javascript)
         self.assertIn('data-tool="inspect_cnc_manufacturability"', javascript)
         self.assertIn('data-tool="get_issue_details"', javascript)
+        self.assertIn('data-tool="preview_radius_change"', javascript)
+        self.assertIn('id="approve-proposal"', javascript)
+        self.assertIn('id="reject-proposal"', javascript)
+        self.assertIn("recordHumanDecision('approved')", javascript)
+        self.assertIn("recordHumanDecision('rejected')", javascript)
 
     def test_every_stable_feature_maps_to_interactive_meshes(self) -> None:
         viewer = (ROOT / "web" / "bracket-viewer.js").read_text(encoding="utf-8")

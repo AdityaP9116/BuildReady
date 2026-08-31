@@ -1,4 +1,5 @@
-import { gate4Handlers, setRegistrationState, workflowState } from './state.js'
+import { gate5Handlers, setRegistrationState, workflowState } from './state.js'
+import { PROPOSAL_POLICY } from './domain.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
 /** @typedef {{ name: string, title: string, description: string, inputSchema: object, annotations: object, execute: Function }} WebMcpTool */
@@ -21,7 +22,7 @@ const designContextTool = Object.freeze({
     readOnlyHint: true,
     untrustedContentHint: false,
   },
-  execute: gate4Handlers.get_active_design_context,
+  execute: gate5Handlers.get_active_design_context,
 })
 
 const inspectionTool = Object.freeze({
@@ -43,7 +44,7 @@ const inspectionTool = Object.freeze({
     readOnlyHint: true,
     untrustedContentHint: false,
   },
-  execute: gate4Handlers.inspect_cnc_manufacturability,
+  execute: gate5Handlers.inspect_cnc_manufacturability,
 })
 
 function issueDetailsTool() {
@@ -67,14 +68,51 @@ function issueDetailsTool() {
       readOnlyHint: true,
       untrustedContentHint: false,
     },
-    execute: gate4Handlers.get_issue_details,
+    execute: gate5Handlers.get_issue_details,
   })
 }
 
-export function gate4Tools() {
+function radiusPreviewTool() {
+  const cornerFinding = workflowState.findings.find((finding) => finding.ruleId === PROPOSAL_POLICY.ruleId)
+  return Object.freeze({
+    name: 'preview_radius_change',
+    title: 'Preview radius change',
+    description: 'Prepare a bounded, non-destructive inside-radius preview. This tool cannot approve or commit; only the visible human controls can record a decision.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        findingId: {
+          type: 'string',
+          enum: cornerFinding ? [cornerFinding.findingId] : [],
+          description: 'The current internal-corner-radius finding ID.',
+        },
+        proposedRadiusMm: {
+          type: 'number',
+          minimum: PROPOSAL_POLICY.minimumRadiusMm,
+          maximum: PROPOSAL_POLICY.maximumRadiusMm,
+          description: 'Preview radius in millimeters within the allowed bounded range.',
+        },
+      },
+      required: ['findingId', 'proposedRadiusMm'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      untrustedContentHint: false,
+    },
+    execute: gate5Handlers.preview_radius_change,
+  })
+}
+
+export function gate5Tools() {
   const tools = [designContextTool, inspectionTool]
   if (workflowState.inspectionStatus === 'complete' && workflowState.findings.length > 0) {
     tools.push(issueDetailsTool())
+  }
+  if (workflowState.inspectionStatus === 'complete'
+    && workflowState.findings.some((finding) => finding.ruleId === PROPOSAL_POLICY.ruleId)
+    && !workflowState.proposedChange) {
+    tools.push(radiusPreviewTool())
   }
   return Object.freeze(tools)
 }
@@ -103,7 +141,7 @@ export async function synchronizeWebMcpTools(route) {
 
   const controller = new AbortController()
   registrationController = controller
-  const tools = gate4Tools()
+  const tools = gate5Tools()
   setRegistrationState('registering', 0)
 
   try {
@@ -128,8 +166,8 @@ export async function synchronizeWebMcpTools(route) {
   }
 }
 
-export async function executeGate4Tool(toolName, input = {}) {
-  const definition = gate4Tools().find((tool) => tool.name === toolName)
+export async function executeGate5Tool(toolName, input = {}) {
+  const definition = gate5Tools().find((tool) => tool.name === toolName)
   if (!definition) {
     throw new Error(`TOOL_NOT_AVAILABLE: ${toolName}`)
   }
