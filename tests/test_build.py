@@ -27,6 +27,8 @@ class BuildTests(unittest.TestCase):
 
             self.assertTrue((output / "index.html").is_file())
             self.assertTrue((output / "app.js").is_file())
+            self.assertTrue((output / "state.js").is_file())
+            self.assertTrue((output / "webmcp.js").is_file())
             self.assertTrue((output / "styles.css").is_file())
             self.assertEqual((output / "_redirects").read_text().strip(), "/* /index.html 200")
 
@@ -46,7 +48,29 @@ class BuildTests(unittest.TestCase):
         for route in ("/design", "/suppliers", "/review", "/about"):
             self.assertIn(f"'{route}'", javascript)
 
-        self.assertIn("'modelContext' in document", javascript)
+    def test_gate_two_webmcp_contracts_are_present(self) -> None:
+        state = (ROOT / "web" / "state.js").read_text(encoding="utf-8")
+        webmcp = (ROOT / "web" / "webmcp.js").read_text(encoding="utf-8")
+
+        self.assertIn("designId: 'BRKT-001'", state)
+        self.assertIn("revisionId: 'B'", state)
+        self.assertIn("get_active_design_context", webmcp)
+        self.assertIn("inspect_cnc_manufacturability", webmcp)
+        self.assertEqual(webmcp.count("readOnlyHint: true"), 2)
+        self.assertEqual(webmcp.count("untrustedContentHint: false"), 2)
+        self.assertIn("new AbortController()", webmcp)
+        self.assertIn("modelContext.registerTool(tool, { signal: controller.signal })", webmcp)
+        self.assertIn("registrationController?.abort()", webmcp)
+        self.assertIn("modelContext.executeTool(registeredTool, input)", webmcp)
+        self.assertNotIn("executeTool(registeredTool, JSON.stringify(input))", webmcp)
+
+    def test_gate_two_calls_are_visible_in_the_page(self) -> None:
+        javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("Gate 2 diagnostics", javascript)
+        self.assertIn("Visible call history", javascript)
+        self.assertIn('data-tool="get_active_design_context"', javascript)
+        self.assertIn('data-tool="inspect_cnc_manufacturability"', javascript)
 
 
 if __name__ == "__main__":

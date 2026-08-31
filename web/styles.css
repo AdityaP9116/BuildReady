@@ -133,9 +133,28 @@ nav {
 
 .protocol-status {
   display: flex;
-  justify-self: end;
   align-items: center;
   gap: 0.6rem;
+}
+
+.agent-status {
+  display: flex;
+  justify-self: end;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.tool-count,
+.registration-badge {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .protocol-status > span:first-child {
@@ -363,6 +382,143 @@ h1 {
   color: var(--text);
 }
 
+.agent-console,
+.testing-instructions {
+  margin-top: 1rem;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--panel);
+}
+
+.agent-console-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.agent-console-heading h2,
+.testing-instructions h2 {
+  margin-bottom: 0;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  letter-spacing: -0.035em;
+}
+
+.registration-badge[data-status='ready'] {
+  border-color: rgb(120 240 176 / 35%);
+  color: var(--mint);
+}
+
+.registration-badge[data-status='failed'] {
+  border-color: rgb(255 198 109 / 45%);
+  color: var(--amber);
+}
+
+.agent-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.agent-metrics > div {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: var(--bg);
+}
+
+.agent-metrics dt {
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-metrics dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.manual-tool-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.secondary-button {
+  color: var(--text);
+  background: transparent;
+}
+
+.tool-output {
+  display: block;
+  min-height: 5rem;
+  max-height: 18rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  color: #b7cbc4;
+  background: #050a08;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.audit-panel {
+  margin-top: 1.5rem;
+}
+
+.audit-panel h3 {
+  margin-bottom: 0.75rem;
+}
+
+.audit-panel ol {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-panel li {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1fr) auto;
+  gap: 0.25rem 1rem;
+  padding: 0.8rem 1rem;
+  border-left: 2px solid var(--mint);
+  background: var(--bg);
+}
+
+.audit-panel li span {
+  color: var(--mint);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.audit-panel li small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.testing-instructions p {
+  margin: 1rem 0 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.testing-instructions code {
+  color: var(--mint);
+}
+
 .empty-state {
   padding: clamp(2rem, 5vw, 5rem);
   text-align: center;
@@ -440,12 +596,13 @@ h1 {
     overflow-x: auto;
   }
 
-  .protocol-status {
+  .agent-status {
     grid-column: 2;
   }
 
   .workspace-grid,
-  .principles-grid {
+  .principles-grid,
+  .agent-metrics {
     grid-template-columns: 1fr;
   }
 
@@ -457,7 +614,8 @@ h1 {
 
 @media (max-width: 520px) {
   .brand small,
-  .protocol-status strong {
+  .protocol-status strong,
+  .tool-count {
     display: none;
   }
 

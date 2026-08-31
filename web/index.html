@@ -9,7 +9,7 @@
     />
     <title>BuildReady</title>
     <link rel="stylesheet" href="/styles.css" />
-    <script src="/app.js" defer></script>
+    <script src="/app.js" type="module"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -29,12 +29,15 @@
           <a class="nav-link" href="/about" data-route>About</a>
         </nav>
 
-        <div class="protocol-status" id="webmcp-status">
-          <span aria-hidden="true"></span>
-          <span>
-            <strong>WebMCP</strong>
-            <small>Compatibility mode</small>
-          </span>
+        <div class="agent-status">
+          <div class="protocol-status" id="webmcp-status">
+            <span aria-hidden="true"></span>
+            <span>
+              <strong>WebMCP</strong>
+              <small>Compatibility mode</small>
+            </span>
+          </div>
+          <span class="tool-count" id="header-tool-count">0 tools</span>
         </div>
       </header>
 

@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 1 establishes the repository, routed application shell, quality checks, and deployment foundation. WebMCP tool registration begins in Gate 2; deterministic CNC rules, 3D evidence, approval, supplier fixtures, and review-package generation follow in later gates.
+Gate 2 establishes the first real WebMCP vertical slice. The `/design` route registers two browser-native tools against one authoritative fixture/state model, records calls visibly, and retains manual fallback controls. Deterministic CNC rules, 3D evidence, approval, supplier fixtures, and review-package generation follow in later gates.
 
 ## Planned challenge workflow
 
@@ -44,6 +44,25 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
+## Gate 2 WebMCP tools
+
+| Tool | Availability | Behavior |
+| --- | --- | --- |
+| `get_active_design_context` | `/design` | Returns the controlled BRKT-001 revision B context, material, process, quantity, selected feature, preview state, inspection state, and rule-set version. |
+| `inspect_cnc_manufacturability` | `/design` | Temporary read-only registration stub proving the tool lifecycle and visible UI effects. Gate 3 replaces it with the five deterministic CNC rules. |
+
+Both tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Both handlers receive and respect the execution `AbortSignal`.
+
+To test manually in a WebMCP-capable browser:
+
+1. Open `/design` and confirm the diagnostic panel reports two registered tools.
+2. Inspect the page tools in Chrome DevTools or the Model Context Tool Inspector.
+3. Execute `get_active_design_context` with `{}`.
+4. Execute `inspect_cnc_manufacturability` with `{ "severity": "all" }`.
+5. Confirm the result and visible call-history entry before navigating away.
+
+Standard browsers can execute the same handlers through the two manual controls in the diagnostic panel.
+
 ## Deployment
 
 The production target remains Cloudflare Pages. Connect the GitHub repository to Pages, leave the build command empty, and set the output directory to `web`. The tracked `web/_redirects` file preserves direct loading for client-side routes such as `/design`, `/suppliers`, and `/review`.
@@ -52,7 +71,7 @@ For a locally verified artifact, run `uv run python scripts/build.py`; the comma
 
 ## Browser compatibility
 
-The application remains usable in a standard browser. WebMCP capabilities are detected at runtime and will be implemented behind a guarded compatibility boundary in Gate 2.
+The application remains usable in a standard browser. WebMCP capabilities are detected at runtime behind a guarded compatibility boundary, and manual controls call the same audited handlers when `document.modelContext` is unavailable.
 
 Challenge testing will target:
 
