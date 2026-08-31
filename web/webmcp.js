@@ -1,4 +1,4 @@
-import { gate3Handlers, setRegistrationState } from './state.js'
+import { gate4Handlers, setRegistrationState, workflowState } from './state.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
 /** @typedef {{ name: string, title: string, description: string, inputSchema: object, annotations: object, execute: Function }} WebMcpTool */
@@ -8,44 +8,76 @@ import { gate3Handlers, setRegistrationState } from './state.js'
 /** @type {Document & { modelContext?: ModelContextApi }} */
 const webMcpDocument = document
 
-export const gate3Tools = Object.freeze([
-  Object.freeze({
-    name: 'get_active_design_context',
-    title: 'Get active design context',
-    description: 'Read the active controlled design fixture, revision, material, process, quantity, selected feature, preview state, inspection state, and rule-set version.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
+const designContextTool = Object.freeze({
+  name: 'get_active_design_context',
+  title: 'Get active design context',
+  description: 'Read the active controlled design fixture, revision, material, process, quantity, selected feature, preview state, inspection state, and rule-set version.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: true,
+    untrustedContentHint: false,
+  },
+  execute: gate4Handlers.get_active_design_context,
+})
+
+const inspectionTool = Object.freeze({
+  name: 'inspect_cnc_manufacturability',
+  title: 'Inspect CNC manufacturability',
+  description: 'Evaluate five deterministic CNC rules for BRKT-001 revision B. Returns severity counts, observed measurements, thresholds, stable finding IDs, and fixture evidence references.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      severity: {
+        type: 'string',
+        enum: ['all', 'high', 'medium'],
+        description: 'Optional severity subset for the inspection response.',
+      },
     },
-    annotations: {
-      readOnlyHint: true,
-      untrustedContentHint: false,
-    },
-    execute: gate3Handlers.get_active_design_context,
-  }),
-  Object.freeze({
-    name: 'inspect_cnc_manufacturability',
-    title: 'Inspect CNC manufacturability',
-    description: 'Evaluate five deterministic CNC rules for BRKT-001 revision B. Returns severity counts, observed measurements, thresholds, stable finding IDs, and fixture evidence references.',
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: true,
+    untrustedContentHint: false,
+  },
+  execute: gate4Handlers.inspect_cnc_manufacturability,
+})
+
+function issueDetailsTool() {
+  return Object.freeze({
+    name: 'get_issue_details',
+    title: 'Get issue details',
+    description: 'Explain one current CNC finding using deterministic measurements, threshold, calculation, consequence, recommendation, and its visible 3D highlight target.',
     inputSchema: {
       type: 'object',
       properties: {
-        severity: {
+        findingId: {
           type: 'string',
-          enum: ['all', 'high', 'medium'],
-          description: 'Optional severity subset for the inspection response.',
+          enum: workflowState.findings.map((finding) => finding.findingId),
+          description: 'A finding ID from the active inspection.',
         },
       },
+      required: ['findingId'],
       additionalProperties: false,
     },
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: false,
     },
-    execute: gate3Handlers.inspect_cnc_manufacturability,
-  }),
-])
+    execute: gate4Handlers.get_issue_details,
+  })
+}
+
+export function gate4Tools() {
+  const tools = [designContextTool, inspectionTool]
+  if (workflowState.inspectionStatus === 'complete' && workflowState.findings.length > 0) {
+    tools.push(issueDetailsTool())
+  }
+  return Object.freeze(tools)
+}
 
 let registrationController = null
 
@@ -71,15 +103,16 @@ export async function synchronizeWebMcpTools(route) {
 
   const controller = new AbortController()
   registrationController = controller
+  const tools = gate4Tools()
   setRegistrationState('registering', 0)
 
   try {
-    for (const tool of gate3Tools) {
+    for (const tool of tools) {
       await webMcpDocument.modelContext.registerTool(tool, { signal: controller.signal })
     }
 
     if (!controller.signal.aborted) {
-      setRegistrationState('ready', gate3Tools.length)
+      setRegistrationState('ready', tools.length)
     }
   } catch (error) {
     controller.abort()
@@ -95,10 +128,10 @@ export async function synchronizeWebMcpTools(route) {
   }
 }
 
-export async function executeGate3Tool(toolName, input = {}) {
-  const definition = gate3Tools.find((tool) => tool.name === toolName)
+export async function executeGate4Tool(toolName, input = {}) {
+  const definition = gate4Tools().find((tool) => tool.name === toolName)
   if (!definition) {
-    throw new Error(`UNKNOWN_TOOL: ${toolName}`)
+    throw new Error(`TOOL_NOT_AVAILABLE: ${toolName}`)
   }
 
   if (!webMcpAvailable()) {
@@ -114,4 +147,7 @@ export async function executeGate3Tool(toolName, input = {}) {
   return webMcpDocument.modelContext.executeTool(registeredTool, input)
 }
 
+window.addEventListener('buildready:toolavailabilitychange', () => {
+  void synchronizeWebMcpTools(workflowState.activeRoute)
+})
 window.addEventListener('beforeunload', cleanupWebMcpTools, { once: true })

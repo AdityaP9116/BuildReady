@@ -202,6 +202,37 @@ class CncRuleTests(unittest.TestCase):
         serialized = json.dumps(envelope, separators=(",", ":"))
         self.assertLessEqual(len(serialized), 1500)
 
+    def test_issue_detail_envelope_stays_within_output_budget(self) -> None:
+        domain = load_domain()
+        rule = domain["rules"][0]
+        feature = find_feature(domain, rule["featureId"])
+        finding = evaluate_rule(domain, rule)
+        envelope = {
+            "ok": True,
+            "inspectionId": "inspection-BRKT-001-B-cnc-demo-1.0.0",
+            "revisionPrecondition": "BRKT-001/B@1.0.0",
+            "finding": {
+                "findingId": finding["findingId"],
+                "rule": f"{rule['ruleId']}@{rule['version']}",
+                "title": rule["title"],
+                "severity": finding["severity"],
+                "featureId": finding["featureId"],
+                "observedMeasurements": finding["observedMeasurements"],
+                "threshold": finding["threshold"],
+                "calculation": finding["calculation"],
+                "consequence": rule["consequence"],
+                "recommendation": rule["recommendation"],
+                "confidence": "deterministic",
+                "evidenceReferences": rule["evidenceReferences"],
+                "highlightTarget": {
+                    "objectReference": feature["objectReference"],
+                    "highlightIds": feature["highlightIds"],
+                },
+            },
+        }
+        serialized = json.dumps(envelope, separators=(",", ":"))
+        self.assertLessEqual(len(serialized), 1500)
+
 
 if __name__ == "__main__":
     unittest.main()

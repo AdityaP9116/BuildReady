@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 3 establishes the deterministic manufacturability engine. The `/design` route registers two browser-native tools against one authoritative revision-B fixture, evaluates five versioned CNC rules, returns concise evidence-backed findings, records calls visibly, and retains manual fallback controls. Interactive 3D evidence, approval, supplier fixtures, and review-package generation follow in later gates.
+Gate 4 adds synchronized visual evidence to the deterministic manufacturability engine. The `/design` route renders a dependency-free parametric bracket, maps five stable feature IDs to interactive meshes, highlights findings by severity, focuses selected evidence, and conditionally exposes issue details through WebMCP. Approval, supplier fixtures, and review-package generation follow in later gates.
 
 ## Planned challenge workflow
 
@@ -44,24 +44,32 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 3 WebMCP tools
+## Gate 4 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
 | `get_active_design_context` | `/design` | Returns the controlled BRKT-001 revision B context, material, process, quantity, selected feature, preview state, inspection state, and rule-set version. |
 | `inspect_cnc_manufacturability` | `/design` | Evaluates internal corner radius, pocket aspect ratio, thin-wall thickness, drilled-hole depth ratio, and mounting-hole tolerance against versioned demonstration thresholds. Returns five stable findings for the default fixture. |
+| `get_issue_details` | `/design`, after inspection | Returns one finding's deterministic measurements, threshold, calculation, consequence, recommendation, evidence references, and 3D highlight target. Selecting it focuses the same feature in the canvas and text panel. |
 
 Both tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Both handlers receive and respect the execution `AbortSignal`.
 
 To test manually in a WebMCP-capable browser:
 
-1. Open `/design` and confirm the diagnostic panel reports two registered tools.
+1. Open `/design` and confirm the diagnostic panel initially reports two registered tools.
 2. Inspect the page tools in Chrome DevTools or the Model Context Tool Inspector.
 3. Execute `get_active_design_context` with `{}`.
 4. Execute `inspect_cnc_manufacturability` with `{ "severity": "all" }`.
-5. Confirm the result and visible call-history entry before navigating away.
+5. Confirm five issue rows and model highlights appear, and that `get_issue_details` becomes the third registered tool.
+6. Call `get_issue_details` with a current finding ID and confirm the model, measurement panel, selected text row, and audit entry focus together.
 
-Standard browsers can execute the same handlers through the two manual controls in the diagnostic panel.
+Standard browsers can execute the same handlers through the diagnostic panel's manual controls.
+
+### Parametric evidence viewer
+
+`web/bracket-viewer.js` is a small browser-native 3D renderer with no npm dependency. It builds cuboid and ring meshes from numeric parameters, projects them into an isometric canvas scene, depth-sorts polygon faces, and performs feature hit testing. The stable feature-to-mesh map is exported for contract verification.
+
+The canvas supports pointer hover and selection, animated feature focus, arrow-key feature navigation, Home/Escape camera reset, reduced-motion preferences, and a text measurement alternative. Finding rows are keyboard-accessible buttons, and severity is communicated through labels as well as color.
 
 ### Controlled rule set
 

@@ -1,6 +1,7 @@
-import { workflowState, setActiveRoute } from './state.js'
+import { DESIGN_FIXTURE, selectFeature, selectFinding, workflowState, setActiveRoute } from './state.js'
+import { mountBracketViewer } from './bracket-viewer.js'
 import {
-  executeGate3Tool,
+  executeGate4Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
 } from './webmcp.js'
@@ -16,6 +17,8 @@ const routes = {
 const app = document.querySelector('#app')
 const webMcpStatus = document.querySelector('#webmcp-status')
 const headerToolCount = document.querySelector('#header-tool-count')
+let bracketViewer = null
+let findingsSignature = ''
 
 function pageIntro(eyebrow, title, description, aside = '') {
   return `
@@ -50,7 +53,7 @@ function renderAgentConsole() {
     <section class="agent-console" aria-labelledby="agent-console-title">
       <div class="agent-console-heading">
         <div>
-          <p class="eyebrow">Gate 3 diagnostics</p>
+          <p class="eyebrow">Gate 4 diagnostics</p>
           <h2 id="agent-console-title">Agent-ready WebMCP surface</h2>
         </div>
         <span class="registration-badge" id="registration-badge">Checking</span>
@@ -65,6 +68,7 @@ function renderAgentConsole() {
       <div class="manual-tool-controls" aria-label="Manual WebMCP fallback controls">
         <button type="button" data-tool="get_active_design_context">Read design context</button>
         <button type="button" class="secondary-button" data-tool="inspect_cnc_manufacturability">Run CNC inspection</button>
+        <button type="button" class="secondary-button" id="issue-details-button" data-tool="get_issue_details" disabled>Explain selected issue</button>
       </div>
 
       <output class="tool-output" id="tool-output" aria-live="polite">No tool output yet.</output>
@@ -97,19 +101,41 @@ function renderDesign() {
         '<div class="part-chip"><span>Sample fixture</span><strong>BRKT-001-B</strong></div>',
       )}
       <section class="workspace-grid" aria-label="BuildReady workflow foundation">
-        <div class="viewer-placeholder">
-          <div class="bracket-mark" aria-hidden="true"></div>
-          <p>Parametric bracket viewer arrives in Gate 4.</p>
-        </div>
+        <section class="viewer-stage" aria-labelledby="viewer-title">
+          <div class="viewer-heading">
+            <div>
+              <p class="eyebrow">Parametric evidence scene</p>
+              <h2 id="viewer-title">BRKT-001-B</h2>
+            </div>
+            <button type="button" class="secondary-button compact-button" id="reset-camera">Reset camera</button>
+          </div>
+          <canvas id="bracket-canvas" tabindex="0" role="img"></canvas>
+          <div class="viewer-legend" aria-label="Model highlight legend">
+            <span><i data-legend="selected"></i>Selected</span>
+            <span><i data-legend="high"></i>High issue</span>
+            <span><i data-legend="medium"></i>Medium issue</span>
+          </div>
+          <p class="viewer-instructions" id="viewer-instructions">Point to or click model features. With the model focused, use arrow keys to move between features and Home to reset the camera.</p>
+          <aside class="measurement-panel" aria-live="polite" aria-labelledby="measurement-title">
+            <div>
+              <span id="measurement-severity">Selected feature</span>
+              <h3 id="measurement-title">Inside pocket corner</h3>
+              <code id="measurement-feature-id">inside-pocket-corner</code>
+            </div>
+            <dl id="measurement-values"></dl>
+            <p id="measurement-calculation">Run inspection to attach deterministic rule evidence.</p>
+          </aside>
+        </section>
         <div class="stage-list">
           ${stageCard('01', 'Read design context', 'The live WebMCP tool exposes the active part, process, quantity, revision, and selected feature.', 'ready')}
           ${stageCard('02', 'Inspect manufacturability', 'Five deterministic rules now measure the revision-B corner, pocket, wall, drilled hole, and tolerance features.', 'ready')}
-          ${stageCard('03', 'Preview a correction', 'Show a bounded radius change without committing it for the engineer.')}
+          ${stageCard('03', 'Focus visual evidence', 'Issue selection, hover, camera focus, measurements, and keyboard alternatives stay synchronized with agent calls.', 'ready')}
+          ${stageCard('04', 'Preview a correction', 'Show a bounded radius change without committing it for the engineer.')}
         </div>
       </section>
       <aside class="compatibility-note">
         <strong>Controlled evidence</strong>
-        <span>The tools register only on this route. The CNC thresholds are versioned demonstration assumptions, and every result references its exact fixture feature.</span>
+        <span>The tools register only on this route. After inspection, issue details become available and focus the same stable feature in the model and text evidence.</span>
       </aside>
       ${renderAgentConsole()}
     </div>
@@ -164,8 +190,8 @@ function renderAbout() {
         <article><span>03</span><h2>Safe demonstration</h2><p>The challenge path uses controlled fixtures and makes no production-readiness claim.</p></article>
       </section>
       <section class="testing-instructions">
-        <h2>Testing the Gate 3 tools</h2>
-        <p>Open <strong>/design</strong> in a WebMCP-capable browser. Inspect the registered tools, execute <code>get_active_design_context</code> with an empty object, then execute <code>inspect_cnc_manufacturability</code> with an optional severity value.</p>
+        <h2>Testing the Gate 4 tools</h2>
+        <p>Open <strong>/design</strong> in a WebMCP-capable browser. Run <code>inspect_cnc_manufacturability</code>, confirm all five model features highlight, then call <code>get_issue_details</code> with a current finding ID and verify the model and measurement panel focus together.</p>
       </section>
     </div>
   `
@@ -191,6 +217,88 @@ function normalizePath(pathname) {
   return pathname
 }
 
+function measurementLabel(key) {
+  return key
+    .replace(/PlusMinusMm$/, ' tolerance (± mm)')
+    .replace(/Mm$/, ' (mm)')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, (character) => character.toUpperCase())
+}
+
+function measurementValue(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)))
+}
+
+function renderViewerSelection() {
+  const feature = DESIGN_FIXTURE.features.find(
+    (candidate) => candidate.featureId === workflowState.selectedFeatureId,
+  )
+  if (!feature) return
+  const finding = workflowState.findings.find(
+    (candidate) => candidate.findingId === workflowState.selectedFindingId,
+  )
+  const title = document.querySelector('#measurement-title')
+  const featureId = document.querySelector('#measurement-feature-id')
+  const severity = document.querySelector('#measurement-severity')
+  const values = document.querySelector('#measurement-values')
+  const calculation = document.querySelector('#measurement-calculation')
+  if (!title || !featureId || !severity || !values || !calculation) return
+
+  title.textContent = feature.label
+  featureId.textContent = feature.featureId
+  severity.textContent = finding ? `${finding.severity} severity · ${finding.ruleId}` : 'Selected feature'
+  severity.dataset.severity = finding?.severity ?? 'none'
+  const measurements = finding?.observedMeasurements ?? feature.dimensions
+  values.innerHTML = Object.entries(measurements)
+    .map(([key, value]) => `<div><dt>${measurementLabel(key)}</dt><dd>${measurementValue(value)}</dd></div>`)
+    .join('')
+  calculation.textContent = finding
+    ? `${finding.calculation}. ${finding.recommendation}`
+    : 'Run inspection to attach deterministic rule evidence.'
+}
+
+function renderFindings(findingCount, findingsList) {
+  findingCount.textContent = workflowState.inspectionStatus === 'complete'
+    ? `${workflowState.findings.length} findings`
+    : 'Not run'
+  const nextSignature = workflowState.findings.map((finding) => finding.findingId).join('|')
+  if (nextSignature !== findingsSignature) {
+    findingsSignature = nextSignature
+    findingsList.innerHTML = workflowState.findings.length
+      ? workflowState.findings.map((finding) => `
+        <button type="button" class="finding-card" data-finding-id="${finding.findingId}" data-feature-id="${finding.featureId}" data-severity="${finding.severity}" aria-pressed="false">
+          <span class="finding-title-row">
+            <span>${finding.severity}</span>
+            <code>${finding.ruleId} · ${finding.featureId}</code>
+          </span>
+          <strong class="finding-card-title">${finding.title}</strong>
+          <span class="finding-copy"><b>Calculation:</b> ${finding.calculation}</span>
+          <span class="finding-copy"><b>Recommendation:</b> ${finding.recommendation}</span>
+          <small>${finding.evidenceReferences[0]}</small>
+        </button>
+      `).join('')
+      : '<p class="findings-empty">Run the inspection to evaluate all five controlled CNC rules.</p>'
+
+    findingsList.querySelectorAll('[data-finding-id]').forEach((card) => {
+      card.addEventListener('click', () => {
+        if (selectFinding(card.dataset.findingId)) {
+          bracketViewer?.selectFeature(card.dataset.featureId, { focus: true })
+        }
+      })
+      card.addEventListener('pointerenter', () => bracketViewer?.setHoveredFeature(card.dataset.featureId))
+      card.addEventListener('pointerleave', () => bracketViewer?.setHoveredFeature(null))
+      card.addEventListener('focus', () => bracketViewer?.setHoveredFeature(card.dataset.featureId))
+      card.addEventListener('blur', () => bracketViewer?.setHoveredFeature(null))
+    })
+  }
+
+  findingsList.querySelectorAll('[data-finding-id]').forEach((card) => {
+    const selected = card.dataset.findingId === workflowState.selectedFindingId
+    card.setAttribute('aria-pressed', String(selected))
+    card.classList.toggle('selected', selected)
+  })
+}
+
 function updateDiagnostics() {
   const available = webMcpAvailable()
   webMcpStatus.classList.toggle('supported', available)
@@ -204,6 +312,7 @@ function updateDiagnostics() {
   const auditEvents = document.querySelector('#audit-events')
   const findingCount = document.querySelector('#finding-count')
   const findingsList = document.querySelector('#findings-list')
+  const issueDetailsButton = document.querySelector('#issue-details-button')
 
   if (!activeRoute || !toolCount || !lastCall || !registrationBadge || !auditEvents) {
     return
@@ -223,25 +332,23 @@ function updateDiagnostics() {
       .join('')
     : '<li>No tool calls recorded.</li>'
 
-  if (findingCount && findingsList) {
-    findingCount.textContent = workflowState.inspectionStatus === 'complete'
-      ? `${workflowState.findings.length} findings`
-      : 'Not run'
-    findingsList.innerHTML = workflowState.findings.length
-      ? workflowState.findings.map((finding) => `
-        <article class="finding-card" data-severity="${finding.severity}">
-          <div class="finding-title-row">
-            <span>${finding.severity}</span>
-            <code>${finding.ruleId} · ${finding.featureId}</code>
-          </div>
-          <h4>${finding.title}</h4>
-          <p><strong>Calculation:</strong> ${finding.calculation}</p>
-          <p><strong>Recommendation:</strong> ${finding.recommendation}</p>
-          <small>${finding.evidenceReferences[0]}</small>
-        </article>
-      `).join('')
-      : '<p class="findings-empty">Run the inspection to evaluate all five controlled CNC rules.</p>'
-  }
+  if (findingCount && findingsList) renderFindings(findingCount, findingsList)
+  if (issueDetailsButton) issueDetailsButton.disabled = !workflowState.selectedFindingId
+  bracketViewer?.setFindings(workflowState.findings)
+  bracketViewer?.selectFeature(workflowState.selectedFeatureId)
+  renderViewerSelection()
+}
+
+function bindBracketViewer() {
+  const canvas = document.querySelector('#bracket-canvas')
+  if (!canvas) return
+  bracketViewer = mountBracketViewer(canvas, DESIGN_FIXTURE, {
+    onFeatureSelect: (featureId) => selectFeature(featureId),
+  })
+  document.querySelector('#reset-camera')?.addEventListener('click', () => bracketViewer?.resetCamera())
+  bracketViewer.setFindings(workflowState.findings)
+  bracketViewer.selectFeature(workflowState.selectedFeatureId)
+  renderViewerSelection()
 }
 
 function bindManualToolControls() {
@@ -249,13 +356,17 @@ function bindManualToolControls() {
     button.addEventListener('click', async () => {
       const toolName = button.dataset.tool
       const output = document.querySelector('#tool-output')
-      const input = toolName === 'inspect_cnc_manufacturability' ? { severity: 'all' } : {}
+      const input = toolName === 'inspect_cnc_manufacturability'
+        ? { severity: 'all' }
+        : toolName === 'get_issue_details'
+          ? { findingId: workflowState.selectedFindingId }
+          : {}
 
       button.disabled = true
       output.textContent = `Calling ${toolName}…`
 
       try {
-        const result = await executeGate3Tool(toolName, input)
+        const result = await executeGate4Tool(toolName, input)
         output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
       } catch (error) {
         output.textContent = error?.message ?? 'Tool execution failed.'
@@ -277,6 +388,9 @@ async function renderRoute() {
   const render = routes[path] ?? renderNotFound
 
   try {
+    bracketViewer?.destroy()
+    bracketViewer = null
+    findingsSignature = ''
     app.innerHTML = render()
   } catch (error) {
     console.error('BuildReady route rendering failed', error)
@@ -296,6 +410,7 @@ async function renderRoute() {
   })
 
   setActiveRoute(path)
+  if (path === '/design') bindBracketViewer()
   bindManualToolControls()
   updateDiagnostics()
   await synchronizeWebMcpTools(path)

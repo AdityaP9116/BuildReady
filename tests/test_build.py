@@ -32,6 +32,7 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((output / "domain.js").is_file())
             self.assertTrue((output / "cnc-rules.js").is_file())
             self.assertTrue((output / "cnc-domain.json").is_file())
+            self.assertTrue((output / "bracket-viewer.js").is_file())
             self.assertTrue((output / "styles.css").is_file())
             self.assertEqual((output / "_redirects").read_text().strip(), "/* /index.html 200")
 
@@ -51,7 +52,7 @@ class BuildTests(unittest.TestCase):
         for route in ("/design", "/suppliers", "/review", "/about"):
             self.assertIn(f"'{route}'", javascript)
 
-    def test_gate_three_webmcp_contracts_are_present(self) -> None:
+    def test_gate_four_webmcp_contracts_are_present(self) -> None:
         domain = (ROOT / "web" / "cnc-domain.json").read_text(encoding="utf-8")
         rules = (ROOT / "web" / "cnc-rules.js").read_text(encoding="utf-8")
         webmcp = (ROOT / "web" / "webmcp.js").read_text(encoding="utf-8")
@@ -70,22 +71,48 @@ class BuildTests(unittest.TestCase):
             self.assertIn(evaluator, rules)
         self.assertIn("get_active_design_context", webmcp)
         self.assertIn("inspect_cnc_manufacturability", webmcp)
-        self.assertEqual(webmcp.count("readOnlyHint: true"), 2)
-        self.assertEqual(webmcp.count("untrustedContentHint: false"), 2)
+        self.assertIn("get_issue_details", webmcp)
+        self.assertIn("workflowState.inspectionStatus === 'complete'", webmcp)
+        self.assertIn("enum: workflowState.findings.map", webmcp)
+        self.assertEqual(webmcp.count("readOnlyHint: true"), 3)
+        self.assertEqual(webmcp.count("untrustedContentHint: false"), 3)
         self.assertIn("new AbortController()", webmcp)
         self.assertIn("modelContext.registerTool(tool, { signal: controller.signal })", webmcp)
         self.assertIn("registrationController?.abort()", webmcp)
         self.assertIn("modelContext.executeTool(registeredTool, input)", webmcp)
         self.assertNotIn("executeTool(registeredTool, JSON.stringify(input))", webmcp)
 
-    def test_gate_three_calls_and_findings_are_visible_in_the_page(self) -> None:
+    def test_gate_four_calls_findings_and_text_evidence_are_visible(self) -> None:
         javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
-        self.assertIn("Gate 3 diagnostics", javascript)
+        self.assertIn("Gate 4 diagnostics", javascript)
         self.assertIn("Visible call history", javascript)
         self.assertIn("Deterministic findings", javascript)
+        self.assertIn('id="bracket-canvas" tabindex="0" role="img"', javascript)
+        self.assertIn('class="measurement-panel" aria-live="polite"', javascript)
+        self.assertIn('class="finding-card" data-finding-id=', javascript)
         self.assertIn('data-tool="get_active_design_context"', javascript)
         self.assertIn('data-tool="inspect_cnc_manufacturability"', javascript)
+        self.assertIn('data-tool="get_issue_details"', javascript)
+
+    def test_every_stable_feature_maps_to_interactive_meshes(self) -> None:
+        viewer = (ROOT / "web" / "bracket-viewer.js").read_text(encoding="utf-8")
+        for feature_id in (
+            "inside-pocket-corner",
+            "deep-pocket",
+            "thin-wall",
+            "deep-drilled-hole",
+            "mounting-hole-tolerance",
+        ):
+            self.assertIn(f"'{feature_id}'", viewer)
+
+        self.assertIn("FEATURE_MESH_MAP", viewer)
+        self.assertIn("createParametricBracketScene", viewer)
+        self.assertIn("pointInPolygon", viewer)
+        self.assertIn("handlePointerMove", viewer)
+        self.assertIn("handleKeyDown", viewer)
+        self.assertIn("focusFeature", viewer)
+        self.assertIn("prefers-reduced-motion", viewer)
 
 
 if __name__ == "__main__":

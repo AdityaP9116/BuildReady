@@ -30,6 +30,12 @@ function emitStateChange() {
   window.dispatchEvent(new CustomEvent('buildready:statechange'))
 }
 
+function requestToolAvailabilityRefresh() {
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('buildready:toolavailabilitychange'))
+  }, 0)
+}
+
 export function setActiveRoute(route) {
   workflowState.activeRoute = route
   emitStateChange()
@@ -73,6 +79,26 @@ function selectedFeature() {
   return DESIGN_FIXTURE.features.find(
     (feature) => feature.featureId === workflowState.selectedFeatureId,
   )
+}
+
+export function selectFeature(featureId) {
+  const feature = DESIGN_FIXTURE.features.find((candidate) => candidate.featureId === featureId)
+  if (!feature) return false
+  workflowState.selectedFeatureId = featureId
+  workflowState.selectedFindingId = workflowState.findings.find(
+    (finding) => finding.featureId === featureId,
+  )?.findingId ?? null
+  emitStateChange()
+  return true
+}
+
+export function selectFinding(findingId) {
+  const finding = workflowState.findings.find((candidate) => candidate.findingId === findingId)
+  if (!finding) return false
+  workflowState.selectedFindingId = finding.findingId
+  workflowState.selectedFeatureId = finding.featureId
+  emitStateChange()
+  return true
 }
 
 export function activeDesignContext() {
@@ -124,10 +150,62 @@ async function inspectCncManufacturability(input, { signal } = {}) {
   workflowState.inspection = { ...inspection, generatedAt }
   workflowState.findings = [...inspection.findings]
   workflowState.selectedFindingId = inspection.findings[0]?.findingId ?? null
+  workflowState.selectedFeatureId = inspection.findings[0]?.featureId ?? workflowState.selectedFeatureId
   workflowState.errorState = null
   emitStateChange()
+  requestToolAvailabilityRefresh()
 
   return compactInspectionResult(inspection, generatedAt)
+}
+
+function currentRevisionPrecondition() {
+  return `${DESIGN_FIXTURE.designId}/${DESIGN_FIXTURE.revisionId}@${DESIGN_FIXTURE.fixtureVersion}`
+}
+
+async function getIssueDetails(input, { signal } = {}) {
+  abortIfRequested(signal)
+  const keys = Object.keys(input ?? {})
+  if (keys.length !== 1 || keys[0] !== 'findingId' || typeof input.findingId !== 'string') {
+    throw new TypeError('INVALID_INPUT: findingId must identify one current finding.')
+  }
+  if (workflowState.inspectionStatus !== 'complete' || !workflowState.inspection) {
+    throw new Error('INSPECTION_REQUIRED: run inspect_cnc_manufacturability first.')
+  }
+  if (workflowState.inspection.revisionPrecondition !== currentRevisionPrecondition()) {
+    throw new Error('STALE_INSPECTION: re-run inspection for the active revision.')
+  }
+
+  const finding = workflowState.findings.find((candidate) => candidate.findingId === input.findingId)
+  if (!finding) {
+    throw new Error('FINDING_NOT_FOUND: choose a finding from the current inspection.')
+  }
+  const feature = DESIGN_FIXTURE.features.find((candidate) => candidate.featureId === finding.featureId)
+  selectFinding(finding.findingId)
+  abortIfRequested(signal)
+
+  return {
+    ok: true,
+    inspectionId: workflowState.inspection.inspectionId,
+    revisionPrecondition: workflowState.inspection.revisionPrecondition,
+    finding: {
+      findingId: finding.findingId,
+      rule: `${finding.ruleId}@${finding.ruleVersion}`,
+      title: finding.title,
+      severity: finding.severity,
+      featureId: finding.featureId,
+      observedMeasurements: finding.observedMeasurements,
+      threshold: finding.threshold,
+      calculation: finding.calculation,
+      consequence: finding.consequence,
+      recommendation: finding.recommendation,
+      confidence: finding.confidence,
+      evidenceReferences: finding.evidenceReferences,
+      highlightTarget: {
+        objectReference: feature.objectReference,
+        highlightIds: finding.highlightIds,
+      },
+    },
+  }
 }
 
 function audited(toolName, summary, handler) {
@@ -145,7 +223,7 @@ function audited(toolName, summary, handler) {
   }
 }
 
-export const gate3Handlers = Object.freeze({
+export const gate4Handlers = Object.freeze({
   get_active_design_context: audited(
     'get_active_design_context',
     'Returned BRKT-001 revision B with five stable feature records.',
@@ -155,5 +233,10 @@ export const gate3Handlers = Object.freeze({
     'inspect_cnc_manufacturability',
     'Evaluated five deterministic CNC rules and attached evidence references.',
     inspectCncManufacturability,
+  ),
+  get_issue_details: audited(
+    'get_issue_details',
+    'Focused one deterministic finding and displayed its measurements.',
+    getIssueDetails,
   ),
 })
