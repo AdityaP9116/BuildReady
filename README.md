@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 9 presents the complete, hardened workflow as a guided product experience. A persistent header reports progress and offers a full reset, the design page introduces the four-stage evidence path, and the About page explains the WebMCP lifecycle and trust boundaries. Responsive and keyboard-visible states are polished, and feature scope is frozen for final submission preparation.
+Gate 10 completes the local submission-readiness package. The feature-frozen application now has an official-form-aligned Devpost draft, sub-three-minute demo script, testing record, challenge-work history, attribution disclosure, and final external-action checklist. The public deployment, YouTube upload, participant-specific form answers, and final Devpost action remain deliberately unclaimed until verified.
 
 ## Planned challenge workflow
 
@@ -19,6 +19,30 @@ Gate 9 presents the complete, hardened workflow as a guided product experience. 
 ## Toolchain
 
 BuildReady intentionally uses a small, npm-free toolchain. The browser application is plain HTML, CSS, and JavaScript, while Python's standard library handles local serving, validation, tests, and deterministic build output. [`uv`](https://docs.astral.sh/uv/) is the only project runner and environment manager; the project has no PyPI or npm dependencies.
+
+## Architecture
+
+```text
+cnc-domain.json + supplier-fixtures.json
+                  │
+          deterministic engines
+        CNC rules · quotes · package
+                  │
+      audited in-memory workflow state
+                  │
+     route/state-scoped WebMCP tools
+                  │
+ canvas evidence · decisions · quotes · exports
+```
+
+| Layer | Responsibility |
+| --- | --- |
+| Controlled fixtures | Freeze BRKT-001-B, five CNC rules, the proposal policy, and two fictional suppliers. |
+| Pure engines | Calculate stable findings, configuration hashes, quote totals, completeness, and Markdown serialization. |
+| Workflow state | Enforce revision preconditions, record human/tool audit actors, and clear all derived records on reset. |
+| WebMCP surface | Register strict tools only on the route and at the state where they are valid; abort obsolete registrations. |
+| Visible application | Keep the canvas, measurement evidence, proposal, supplier cards, progress, and package synchronized. |
+| uv/Python tooling | Serve SPA fallbacks with security headers, validate sources, run tests, and build `dist/` without packages. |
 
 ## Local development
 
@@ -44,7 +68,7 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 9 WebMCP tools
+## Gate 10 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
@@ -105,6 +129,10 @@ Approval is intentionally absent from the WebMCP surface. The visible UI records
 The persistent header shows completed stages across every route and resets the entire derived workflow from anywhere. The initial design workspace explains Inspect → Decide → Compare → Package before presenting the evidence scene, and `/about` documents page-owned contracts, conditional registration, visible evidence, cleanup, and the separation between agent actions, human authority, and untrusted supplier data.
 
 The frozen post–Gate 9 scope and required final screenshot states are recorded in `docs/feature-freeze.md`. Gate 10 is limited to defect fixes, documentation, submission materials, capture guidance, deployment configuration, and external verification.
+
+### Submission packet
+
+The official-form-aligned draft is in `devpost-submission.md`. Supporting artifacts live under `docs/submission/`: the timed demo script, golden-path and browser-matrix testing record, challenge-period work history, attribution disclosure, and final readiness checklist. These files are preparation artifacts only; no Devpost project, video, or final entry is claimed by this repository state.
 
 ### Controlled rule set
 
