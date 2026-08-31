@@ -1,6 +1,6 @@
 import { workflowState, setActiveRoute } from './state.js'
 import {
-  executeGate2Tool,
+  executeGate3Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
 } from './webmcp.js'
@@ -50,7 +50,7 @@ function renderAgentConsole() {
     <section class="agent-console" aria-labelledby="agent-console-title">
       <div class="agent-console-heading">
         <div>
-          <p class="eyebrow">Gate 2 diagnostics</p>
+          <p class="eyebrow">Gate 3 diagnostics</p>
           <h2 id="agent-console-title">Agent-ready WebMCP surface</h2>
         </div>
         <span class="registration-badge" id="registration-badge">Checking</span>
@@ -64,10 +64,20 @@ function renderAgentConsole() {
 
       <div class="manual-tool-controls" aria-label="Manual WebMCP fallback controls">
         <button type="button" data-tool="get_active_design_context">Read design context</button>
-        <button type="button" class="secondary-button" data-tool="inspect_cnc_manufacturability">Run inspection stub</button>
+        <button type="button" class="secondary-button" data-tool="inspect_cnc_manufacturability">Run CNC inspection</button>
       </div>
 
       <output class="tool-output" id="tool-output" aria-live="polite">No tool output yet.</output>
+
+      <section class="findings-panel" aria-labelledby="findings-title">
+        <div class="findings-heading">
+          <h3 id="findings-title">Deterministic findings</h3>
+          <span id="finding-count">Not run</span>
+        </div>
+        <div class="findings-list" id="findings-list">
+          <p class="findings-empty">Run the inspection to evaluate all five controlled CNC rules.</p>
+        </div>
+      </section>
 
       <div class="audit-panel">
         <h3>Visible call history</h3>
@@ -93,13 +103,13 @@ function renderDesign() {
         </div>
         <div class="stage-list">
           ${stageCard('01', 'Read design context', 'The live WebMCP tool exposes the active part, process, quantity, revision, and selected feature.', 'ready')}
-          ${stageCard('02', 'Inspect manufacturability', 'A temporary WebMCP stub proves the tool lifecycle before Gate 3 adds five deterministic rules.', 'ready')}
+          ${stageCard('02', 'Inspect manufacturability', 'Five deterministic rules now measure the revision-B corner, pocket, wall, drilled hole, and tolerance features.', 'ready')}
           ${stageCard('03', 'Preview a correction', 'Show a bounded radius change without committing it for the engineer.')}
         </div>
       </section>
       <aside class="compatibility-note">
-        <strong>WebMCP proof</strong>
-        <span>The tools register only on this route and automatically unregister when the route changes. Manual controls remain available in standard browsers.</span>
+        <strong>Controlled evidence</strong>
+        <span>The tools register only on this route. The CNC thresholds are versioned demonstration assumptions, and every result references its exact fixture feature.</span>
       </aside>
       ${renderAgentConsole()}
     </div>
@@ -154,7 +164,7 @@ function renderAbout() {
         <article><span>03</span><h2>Safe demonstration</h2><p>The challenge path uses controlled fixtures and makes no production-readiness claim.</p></article>
       </section>
       <section class="testing-instructions">
-        <h2>Testing the Gate 2 tools</h2>
+        <h2>Testing the Gate 3 tools</h2>
         <p>Open <strong>/design</strong> in a WebMCP-capable browser. Inspect the registered tools, execute <code>get_active_design_context</code> with an empty object, then execute <code>inspect_cnc_manufacturability</code> with an optional severity value.</p>
       </section>
     </div>
@@ -192,6 +202,8 @@ function updateDiagnostics() {
   const lastCall = document.querySelector('#last-tool-call')
   const registrationBadge = document.querySelector('#registration-badge')
   const auditEvents = document.querySelector('#audit-events')
+  const findingCount = document.querySelector('#finding-count')
+  const findingsList = document.querySelector('#findings-list')
 
   if (!activeRoute || !toolCount || !lastCall || !registrationBadge || !auditEvents) {
     return
@@ -210,6 +222,26 @@ function updateDiagnostics() {
       .map((event) => `<li><strong>${event.toolName}</strong><span>${event.status}</span><small>${event.summary}</small></li>`)
       .join('')
     : '<li>No tool calls recorded.</li>'
+
+  if (findingCount && findingsList) {
+    findingCount.textContent = workflowState.inspectionStatus === 'complete'
+      ? `${workflowState.findings.length} findings`
+      : 'Not run'
+    findingsList.innerHTML = workflowState.findings.length
+      ? workflowState.findings.map((finding) => `
+        <article class="finding-card" data-severity="${finding.severity}">
+          <div class="finding-title-row">
+            <span>${finding.severity}</span>
+            <code>${finding.ruleId} · ${finding.featureId}</code>
+          </div>
+          <h4>${finding.title}</h4>
+          <p><strong>Calculation:</strong> ${finding.calculation}</p>
+          <p><strong>Recommendation:</strong> ${finding.recommendation}</p>
+          <small>${finding.evidenceReferences[0]}</small>
+        </article>
+      `).join('')
+      : '<p class="findings-empty">Run the inspection to evaluate all five controlled CNC rules.</p>'
+  }
 }
 
 function bindManualToolControls() {
@@ -223,7 +255,7 @@ function bindManualToolControls() {
       output.textContent = `Calling ${toolName}…`
 
       try {
-        const result = await executeGate2Tool(toolName, input)
+        const result = await executeGate3Tool(toolName, input)
         output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
       } catch (error) {
         output.textContent = error?.message ?? 'Tool execution failed.'

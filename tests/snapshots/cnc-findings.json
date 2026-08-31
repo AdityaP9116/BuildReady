@@ -1,0 +1,67 @@
+[
+  {
+    "findingId": "finding-BRKT-001-B-CNC-R001",
+    "ruleId": "CNC-R001",
+    "severity": "high",
+    "featureId": "inside-pocket-corner",
+    "observedMeasurements": { "insideRadiusMm": 1.0 },
+    "threshold": { "operator": "minimum", "value": 3.5, "unit": "mm" },
+    "calculation": "1 mm < 3.5 mm",
+    "evidenceReferences": [
+      "fixture://BRKT-001/B/features/inside-pocket-corner",
+      "ruleset://cnc-demo-1.0.0/CNC-R001"
+    ]
+  },
+  {
+    "findingId": "finding-BRKT-001-B-CNC-R002",
+    "ruleId": "CNC-R002",
+    "severity": "medium",
+    "featureId": "deep-pocket",
+    "observedMeasurements": { "depthMm": 24.0, "minWidthMm": 6.0, "calculatedRatio": 4.0 },
+    "threshold": { "operator": "maximum", "value": 3.0, "unit": "ratio" },
+    "calculation": "24 / 6 = 4 > 3",
+    "evidenceReferences": [
+      "fixture://BRKT-001/B/features/deep-pocket",
+      "ruleset://cnc-demo-1.0.0/CNC-R002"
+    ]
+  },
+  {
+    "findingId": "finding-BRKT-001-B-CNC-R003",
+    "ruleId": "CNC-R003",
+    "severity": "high",
+    "featureId": "thin-wall",
+    "observedMeasurements": { "thicknessMm": 0.8 },
+    "threshold": { "operator": "minimum", "value": 1.5, "unit": "mm" },
+    "calculation": "0.8 mm < 1.5 mm",
+    "evidenceReferences": [
+      "fixture://BRKT-001/B/features/thin-wall",
+      "ruleset://cnc-demo-1.0.0/CNC-R003"
+    ]
+  },
+  {
+    "findingId": "finding-BRKT-001-B-CNC-R004",
+    "ruleId": "CNC-R004",
+    "severity": "medium",
+    "featureId": "deep-drilled-hole",
+    "observedMeasurements": { "depthMm": 30.0, "diameterMm": 5.0, "calculatedRatio": 6.0 },
+    "threshold": { "operator": "maximum", "value": 4.0, "unit": "ratio" },
+    "calculation": "30 / 5 = 6 > 4",
+    "evidenceReferences": [
+      "fixture://BRKT-001/B/features/deep-drilled-hole",
+      "ruleset://cnc-demo-1.0.0/CNC-R004"
+    ]
+  },
+  {
+    "findingId": "finding-BRKT-001-B-CNC-R005",
+    "ruleId": "CNC-R005",
+    "severity": "medium",
+    "featureId": "mounting-hole-tolerance",
+    "observedMeasurements": { "tolerancePlusMinusMm": 0.02 },
+    "threshold": { "operator": "minimum", "value": 0.05, "unit": "mm" },
+    "calculation": "0.02 mm < 0.05 mm",
+    "evidenceReferences": [
+      "fixture://BRKT-001/B/features/mounting-hole-tolerance",
+      "ruleset://cnc-demo-1.0.0/CNC-R005"
+    ]
+  }
+]

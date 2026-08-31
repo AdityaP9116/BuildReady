@@ -1,29 +1,27 @@
-export const DESIGN_FIXTURE = Object.freeze({
-  designId: 'BRKT-001',
-  revisionId: 'B',
-  fixtureVersion: '1.0.0',
-  name: 'CNC Mounting Bracket',
-  material: Object.freeze({ id: 'al-6061-t6', label: '6061-T6 aluminum' }),
-  process: Object.freeze({ id: 'cnc-mill-3-axis', label: 'Three-axis CNC milling' }),
-  quantity: 1000,
-  units: 'millimeters',
-  features: Object.freeze([
-    Object.freeze({
-      featureId: 'inside-pocket-corner',
-      featureType: 'internal_corner',
-      label: 'Inside pocket corner',
-    }),
-  ]),
-})
+import { DESIGN_FIXTURE, RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js'
+import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rules.js'
+
+export { DESIGN_FIXTURE }
 
 export const workflowState = {
   activeRoute: '/design',
-  selectedFeatureId: DESIGN_FIXTURE.features[0].featureId,
+  designContext: DESIGN_FIXTURE,
+  selectedFeatureId: DESIGN_FIXTURE.features.find((feature) => feature.selected)?.featureId ?? null,
   inspectionStatus: 'not_run',
+  inspection: null,
+  findings: [],
+  selectedFindingId: null,
+  proposedChange: null,
+  decisionStatus: 'not_requested',
+  decisionRecord: null,
+  supplierRequests: [],
+  supplierQuotes: [],
+  reviewPackage: null,
   registeredToolCount: 0,
   registrationStatus: 'unsupported',
   lastToolCall: null,
   auditEvents: [],
+  errorState: null,
 }
 
 let eventSequence = 0
@@ -46,7 +44,7 @@ export function setRegistrationState(status, toolCount = 0) {
 export function recordToolCall(toolName, status, summary) {
   eventSequence += 1
   const event = {
-    eventId: `gate2-${String(eventSequence).padStart(3, '0')}`,
+    eventId: `audit-${String(eventSequence).padStart(3, '0')}`,
     actor: 'agent_or_manual_test',
     toolName,
     status,
@@ -55,7 +53,7 @@ export function recordToolCall(toolName, status, summary) {
   }
 
   workflowState.lastToolCall = event
-  workflowState.auditEvents = [...workflowState.auditEvents.slice(-4), event]
+  workflowState.auditEvents = [...workflowState.auditEvents.slice(-9), event]
   emitStateChange()
 }
 
@@ -88,9 +86,11 @@ export function activeDesignContext() {
     quantity: DESIGN_FIXTURE.quantity,
     units: DESIGN_FIXTURE.units,
     selectedFeature: selectedFeature(),
+    featureCount: DESIGN_FIXTURE.features.length,
     unsavedPreview: false,
     inspectionStatus: workflowState.inspectionStatus,
-    ruleSetVersion: 'cnc-demo-0.1.0',
+    ruleSetVersion: RULE_SET_VERSION,
+    ruleSetScope: RULE_SET_SCOPE,
   }
 }
 
@@ -101,11 +101,11 @@ async function getActiveDesignContext(input, { signal } = {}) {
   return {
     ok: true,
     context: activeDesignContext(),
-    nextAction: 'Run inspect_cnc_manufacturability to begin the controlled inspection.',
+    nextAction: 'Run inspect_cnc_manufacturability to evaluate the five controlled CNC rules.',
   }
 }
 
-async function inspectCncStub(input, { signal } = {}) {
+async function inspectCncManufacturability(input, { signal } = {}) {
   abortIfRequested(signal)
 
   const allowedSeverities = ['all', 'high', 'medium']
@@ -116,20 +116,18 @@ async function inspectCncStub(input, { signal } = {}) {
     throw new TypeError('INVALID_INPUT: severity must be all, high, or medium.')
   }
 
-  await Promise.resolve()
+  const inspection = evaluateCncManufacturability(DESIGN_FIXTURE, { severity })
   abortIfRequested(signal)
-  workflowState.inspectionStatus = 'stub_complete'
 
-  return {
-    ok: true,
-    status: 'stub_complete',
-    designId: DESIGN_FIXTURE.designId,
-    revisionId: DESIGN_FIXTURE.revisionId,
-    fixtureVersion: DESIGN_FIXTURE.fixtureVersion,
-    requestedSeverity: severity,
-    findingCount: 0,
-    message: 'Gate 2 registration proof succeeded. The deterministic five-rule evaluator arrives in Gate 3.',
-  }
+  const generatedAt = new Date().toISOString()
+  workflowState.inspectionStatus = 'complete'
+  workflowState.inspection = { ...inspection, generatedAt }
+  workflowState.findings = [...inspection.findings]
+  workflowState.selectedFindingId = inspection.findings[0]?.findingId ?? null
+  workflowState.errorState = null
+  emitStateChange()
+
+  return compactInspectionResult(inspection, generatedAt)
 }
 
 function audited(toolName, summary, handler) {
@@ -140,21 +138,22 @@ function audited(toolName, summary, handler) {
       return result
     } catch (error) {
       const status = error?.name === 'AbortError' ? 'cancelled' : 'failed'
+      workflowState.errorState = status === 'failed' ? error?.message ?? 'Tool execution failed.' : null
       recordToolCall(toolName, status, error?.message ?? 'Tool execution failed.')
       throw error
     }
   }
 }
 
-export const gate2Handlers = Object.freeze({
+export const gate3Handlers = Object.freeze({
   get_active_design_context: audited(
     'get_active_design_context',
-    'Returned the active BRKT-001 revision B context.',
+    'Returned BRKT-001 revision B with five stable feature records.',
     getActiveDesignContext,
   ),
   inspect_cnc_manufacturability: audited(
     'inspect_cnc_manufacturability',
-    'Completed the temporary Gate 2 inspection stub.',
-    inspectCncStub,
+    'Evaluated five deterministic CNC rules and attached evidence references.',
+    inspectCncManufacturability,
   ),
 })

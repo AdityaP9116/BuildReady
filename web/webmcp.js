@@ -1,4 +1,4 @@
-import { gate2Handlers, setRegistrationState } from './state.js'
+import { gate3Handlers, setRegistrationState } from './state.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
 /** @typedef {{ name: string, title: string, description: string, inputSchema: object, annotations: object, execute: Function }} WebMcpTool */
@@ -8,7 +8,7 @@ import { gate2Handlers, setRegistrationState } from './state.js'
 /** @type {Document & { modelContext?: ModelContextApi }} */
 const webMcpDocument = document
 
-export const gate2Tools = Object.freeze([
+export const gate3Tools = Object.freeze([
   Object.freeze({
     name: 'get_active_design_context',
     title: 'Get active design context',
@@ -22,12 +22,12 @@ export const gate2Tools = Object.freeze([
       readOnlyHint: true,
       untrustedContentHint: false,
     },
-    execute: gate2Handlers.get_active_design_context,
+    execute: gate3Handlers.get_active_design_context,
   }),
   Object.freeze({
     name: 'inspect_cnc_manufacturability',
     title: 'Inspect CNC manufacturability',
-    description: 'Run the temporary Gate 2 inspection stub for the active controlled design. This proves registration and visible execution; deterministic CNC findings arrive in Gate 3.',
+    description: 'Evaluate five deterministic CNC rules for BRKT-001 revision B. Returns severity counts, observed measurements, thresholds, stable finding IDs, and fixture evidence references.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -43,7 +43,7 @@ export const gate2Tools = Object.freeze([
       readOnlyHint: true,
       untrustedContentHint: false,
     },
-    execute: gate2Handlers.inspect_cnc_manufacturability,
+    execute: gate3Handlers.inspect_cnc_manufacturability,
   }),
 ])
 
@@ -74,12 +74,12 @@ export async function synchronizeWebMcpTools(route) {
   setRegistrationState('registering', 0)
 
   try {
-    for (const tool of gate2Tools) {
+    for (const tool of gate3Tools) {
       await webMcpDocument.modelContext.registerTool(tool, { signal: controller.signal })
     }
 
     if (!controller.signal.aborted) {
-      setRegistrationState('ready', gate2Tools.length)
+      setRegistrationState('ready', gate3Tools.length)
     }
   } catch (error) {
     controller.abort()
@@ -95,8 +95,8 @@ export async function synchronizeWebMcpTools(route) {
   }
 }
 
-export async function executeGate2Tool(toolName, input = {}) {
-  const definition = gate2Tools.find((tool) => tool.name === toolName)
+export async function executeGate3Tool(toolName, input = {}) {
+  const definition = gate3Tools.find((tool) => tool.name === toolName)
   if (!definition) {
     throw new Error(`UNKNOWN_TOOL: ${toolName}`)
   }

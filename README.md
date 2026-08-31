@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 2 establishes the first real WebMCP vertical slice. The `/design` route registers two browser-native tools against one authoritative fixture/state model, records calls visibly, and retains manual fallback controls. Deterministic CNC rules, 3D evidence, approval, supplier fixtures, and review-package generation follow in later gates.
+Gate 3 establishes the deterministic manufacturability engine. The `/design` route registers two browser-native tools against one authoritative revision-B fixture, evaluates five versioned CNC rules, returns concise evidence-backed findings, records calls visibly, and retains manual fallback controls. Interactive 3D evidence, approval, supplier fixtures, and review-package generation follow in later gates.
 
 ## Planned challenge workflow
 
@@ -44,12 +44,12 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 2 WebMCP tools
+## Gate 3 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
 | `get_active_design_context` | `/design` | Returns the controlled BRKT-001 revision B context, material, process, quantity, selected feature, preview state, inspection state, and rule-set version. |
-| `inspect_cnc_manufacturability` | `/design` | Temporary read-only registration stub proving the tool lifecycle and visible UI effects. Gate 3 replaces it with the five deterministic CNC rules. |
+| `inspect_cnc_manufacturability` | `/design` | Evaluates internal corner radius, pocket aspect ratio, thin-wall thickness, drilled-hole depth ratio, and mounting-hole tolerance against versioned demonstration thresholds. Returns five stable findings for the default fixture. |
 
 Both tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Both handlers receive and respect the execution `AbortSignal`.
 
@@ -62,6 +62,12 @@ To test manually in a WebMCP-capable browser:
 5. Confirm the result and visible call-history entry before navigating away.
 
 Standard browsers can execute the same handlers through the two manual controls in the diagnostic panel.
+
+### Controlled rule set
+
+The machine-readable fixture and rule definitions live in `web/cnc-domain.json`. Rule set `cnc-demo-1.0.0` intentionally freezes challenge-specific assumptions so identical fixture input produces identical findings. These thresholds are demonstration data, not production machining guidance.
+
+The default BRKT-001-B fixture produces two high- and three medium-severity findings. Each finding includes its rule/version, feature ID, observed measurements, threshold, calculation, consequence, recommendation, deterministic confidence, evidence references, and future 3D highlight IDs. The tool response is a compact envelope kept below 1,500 serialized characters; the complete finding records remain in visible page state.
 
 ## Deployment
 

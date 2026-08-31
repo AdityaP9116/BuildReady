@@ -29,6 +29,9 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((output / "app.js").is_file())
             self.assertTrue((output / "state.js").is_file())
             self.assertTrue((output / "webmcp.js").is_file())
+            self.assertTrue((output / "domain.js").is_file())
+            self.assertTrue((output / "cnc-rules.js").is_file())
+            self.assertTrue((output / "cnc-domain.json").is_file())
             self.assertTrue((output / "styles.css").is_file())
             self.assertEqual((output / "_redirects").read_text().strip(), "/* /index.html 200")
 
@@ -48,12 +51,23 @@ class BuildTests(unittest.TestCase):
         for route in ("/design", "/suppliers", "/review", "/about"):
             self.assertIn(f"'{route}'", javascript)
 
-    def test_gate_two_webmcp_contracts_are_present(self) -> None:
-        state = (ROOT / "web" / "state.js").read_text(encoding="utf-8")
+    def test_gate_three_webmcp_contracts_are_present(self) -> None:
+        domain = (ROOT / "web" / "cnc-domain.json").read_text(encoding="utf-8")
+        rules = (ROOT / "web" / "cnc-rules.js").read_text(encoding="utf-8")
         webmcp = (ROOT / "web" / "webmcp.js").read_text(encoding="utf-8")
 
-        self.assertIn("designId: 'BRKT-001'", state)
-        self.assertIn("revisionId: 'B'", state)
+        self.assertIn('"designId": "BRKT-001"', domain)
+        self.assertIn('"revisionId": "B"', domain)
+        self.assertIn('"ruleSetVersion": "cnc-demo-1.0.0"', domain)
+        self.assertEqual(domain.count('"ruleId": "CNC-R'), 5)
+        for evaluator in (
+            "evaluateInternalCornerRadius",
+            "evaluatePocketAspectRatio",
+            "evaluateThinWall",
+            "evaluateHoleDepthRatio",
+            "evaluateExcessiveTolerance",
+        ):
+            self.assertIn(evaluator, rules)
         self.assertIn("get_active_design_context", webmcp)
         self.assertIn("inspect_cnc_manufacturability", webmcp)
         self.assertEqual(webmcp.count("readOnlyHint: true"), 2)
@@ -64,11 +78,12 @@ class BuildTests(unittest.TestCase):
         self.assertIn("modelContext.executeTool(registeredTool, input)", webmcp)
         self.assertNotIn("executeTool(registeredTool, JSON.stringify(input))", webmcp)
 
-    def test_gate_two_calls_are_visible_in_the_page(self) -> None:
+    def test_gate_three_calls_and_findings_are_visible_in_the_page(self) -> None:
         javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
-        self.assertIn("Gate 2 diagnostics", javascript)
+        self.assertIn("Gate 3 diagnostics", javascript)
         self.assertIn("Visible call history", javascript)
+        self.assertIn("Deterministic findings", javascript)
         self.assertIn('data-tool="get_active_design_context"', javascript)
         self.assertIn('data-tool="inspect_cnc_manufacturability"', javascript)
 
