@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 5 adds a bounded, non-destructive radius preview and an explicit human authority boundary. ChatGPT can prepare the controlled geometry proposal, but only the visible engineer controls can approve or reject it. Revision B remains unchanged, and every decision is recorded with a human actor in the audit trail. Supplier fixtures and review-package generation follow in later gates.
+Gate 6 adds a reproducible supplier comparison after the Gate 5 human authority boundary. Once the visible engineer approves or rejects the radius preview, ChatGPT can calculate normalized quotes from the fictional AxisWorks and RapidMill fixtures. Each quote carries a configuration hash, price breakdown, lead time, assumptions, DFM notes, and an explicit demonstration-data disclaimer.
 
 ## Planned challenge workflow
 
@@ -44,7 +44,7 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 5 WebMCP tools
+## Gate 6 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
@@ -52,8 +52,9 @@ uv run python scripts/build.py
 | `inspect_cnc_manufacturability` | `/design` | Evaluates internal corner radius, pocket aspect ratio, thin-wall thickness, drilled-hole depth ratio, and mounting-hole tolerance against versioned demonstration thresholds. Returns five stable findings for the default fixture. |
 | `get_issue_details` | `/design`, after inspection | Returns one finding's deterministic measurements, threshold, calculation, consequence, recommendation, evidence references, and 3D highlight target. Selecting it focuses the same feature in the canvas and text panel. |
 | `preview_radius_change` | `/design`, after the corner finding and before a proposal exists | Prepares a 3.5–5.0 mm inside-radius preview with before/after geometry and a pending human decision. It cannot approve, reject, or commit the proposal. |
+| `prepare_quote_comparison` | `/design`, after a visible human decision and before quotes exist | Calculates two normalized fictional supplier quotes for a supported quantity. Supplier assumptions and DFM notes are marked as untrusted content. |
 
-Both tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Both handlers receive and respect the execution `AbortSignal`.
+The tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Handlers receive and respect the execution `AbortSignal`.
 
 To test manually in a WebMCP-capable browser:
 
@@ -66,6 +67,7 @@ To test manually in a WebMCP-capable browser:
 7. Call `preview_radius_change` with the corner finding and a radius between 3.5 and 5.0 mm.
 8. Confirm the tool disappears while the proposal is pending and that no approval or commit tool exists.
 9. Use the visible Approve preview or Reject control and confirm the audit actor is human.
+10. Confirm `prepare_quote_comparison` appears, call it with `{ "quantity": 1000 }`, and verify the app opens `/suppliers` with two visibly different quotes.
 
 Standard browsers can execute the same handlers through the diagnostic panel's manual controls.
 
@@ -80,6 +82,10 @@ The canvas supports pointer hover and selection, animated feature focus, arrow-k
 The proposal policy lives in `web/cnc-domain.json` and is enforced by pure validation in `web/workflow-rules.js`. The preview is constrained to the current corner finding, the active revision precondition, and a 3.5–5.0 mm range. Repeated pending proposals, stale inspections, invalid values, and cancelled execution fail before workflow state changes.
 
 Approval is intentionally absent from the WebMCP surface. The visible UI records an `approved` or `rejected` decision with actor `human`; the original BRKT-001-B fixture remains authoritative. Resetting the demo invalidates and clears the inspection, proposal, decision, and related audit state.
+
+### Controlled supplier comparison
+
+`web/supplier-fixtures.json` defines two explicitly fictional suppliers and four supported quantities. `web/quote-engine.js` validates the human decision and revision preconditions, computes normalized totals, and produces the same FNV-1a configuration hash for identical inputs. AxisWorks models the lower-cost option while RapidMill models the faster option; the UI preserves each supplier's assumptions and residual DFM notes instead of choosing a winner.
 
 ### Controlled rule set
 

@@ -35,6 +35,8 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((output / "cnc-domain.json").is_file())
             self.assertTrue((output / "bracket-viewer.js").is_file())
             self.assertTrue((output / "workflow-rules.js").is_file())
+            self.assertTrue((output / "quote-engine.js").is_file())
+            self.assertTrue((output / "supplier-fixtures.json").is_file())
             self.assertTrue((output / "styles.css").is_file())
             self.assertEqual((output / "_redirects").read_text().strip(), "/* /index.html 200")
 
@@ -78,9 +80,10 @@ class BuildTests(unittest.TestCase):
         self.assertIn("preview_radius_change", webmcp)
         self.assertIn("workflowState.inspectionStatus === 'complete'", webmcp)
         self.assertIn("enum: workflowState.findings.map", webmcp)
-        self.assertEqual(webmcp.count("readOnlyHint: true"), 3)
+        self.assertEqual(webmcp.count("readOnlyHint: true"), 4)
         self.assertEqual(webmcp.count("readOnlyHint: false"), 1)
         self.assertEqual(webmcp.count("untrustedContentHint: false"), 4)
+        self.assertEqual(webmcp.count("untrustedContentHint: true"), 1)
         self.assertNotIn("name: 'approve", webmcp)
         self.assertNotIn("name: 'commit", webmcp)
         self.assertIn("new AbortController()", webmcp)
@@ -92,7 +95,7 @@ class BuildTests(unittest.TestCase):
     def test_gate_five_authority_controls_are_visible_and_human_only(self) -> None:
         javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
-        self.assertIn("Gate 5 diagnostics", javascript)
+        self.assertIn("Gate 6 diagnostics", javascript)
         self.assertIn("Visible call history", javascript)
         self.assertIn("Deterministic findings", javascript)
         self.assertIn('id="bracket-canvas" tabindex="0" role="img"', javascript)

@@ -1,4 +1,4 @@
-import { gate5Handlers, setRegistrationState, workflowState } from './state.js'
+import { gate6Handlers, setRegistrationState, workflowState } from './state.js'
 import { PROPOSAL_POLICY } from './domain.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
@@ -22,7 +22,7 @@ const designContextTool = Object.freeze({
     readOnlyHint: true,
     untrustedContentHint: false,
   },
-  execute: gate5Handlers.get_active_design_context,
+  execute: gate6Handlers.get_active_design_context,
 })
 
 const inspectionTool = Object.freeze({
@@ -44,7 +44,7 @@ const inspectionTool = Object.freeze({
     readOnlyHint: true,
     untrustedContentHint: false,
   },
-  execute: gate5Handlers.inspect_cnc_manufacturability,
+  execute: gate6Handlers.inspect_cnc_manufacturability,
 })
 
 function issueDetailsTool() {
@@ -68,7 +68,7 @@ function issueDetailsTool() {
       readOnlyHint: true,
       untrustedContentHint: false,
     },
-    execute: gate5Handlers.get_issue_details,
+    execute: gate6Handlers.get_issue_details,
   })
 }
 
@@ -100,11 +100,35 @@ function radiusPreviewTool() {
       readOnlyHint: false,
       untrustedContentHint: false,
     },
-    execute: gate5Handlers.preview_radius_change,
+    execute: gate6Handlers.preview_radius_change,
   })
 }
 
-export function gate5Tools() {
+const quoteComparisonTool = Object.freeze({
+  name: 'prepare_quote_comparison',
+  title: 'Prepare quote comparison',
+  description: 'Calculate two normalized quotes from controlled fictional supplier fixtures for the visibly reviewed design configuration. Full assumptions and DFM notes are untrusted supplier content shown on the page.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      quantity: {
+        type: 'integer',
+        enum: [250, 500, 1000, 2500],
+        description: 'Supported controlled production quantity.',
+      },
+    },
+    required: ['quantity'],
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: true,
+    untrustedContentHint: true,
+  },
+  execute: gate6Handlers.prepare_quote_comparison,
+})
+
+export function gate6Tools(route = '/design') {
+  if (route !== '/design') return Object.freeze([])
   const tools = [designContextTool, inspectionTool]
   if (workflowState.inspectionStatus === 'complete' && workflowState.findings.length > 0) {
     tools.push(issueDetailsTool())
@@ -113,6 +137,11 @@ export function gate5Tools() {
     && workflowState.findings.some((finding) => finding.ruleId === PROPOSAL_POLICY.ruleId)
     && !workflowState.proposedChange) {
     tools.push(radiusPreviewTool())
+  }
+  if (workflowState.inspectionStatus === 'complete'
+    && ['approved', 'rejected'].includes(workflowState.decisionStatus)
+    && workflowState.supplierQuotes.length === 0) {
+    tools.push(quoteComparisonTool)
   }
   return Object.freeze(tools)
 }
@@ -135,13 +164,17 @@ export function cleanupWebMcpTools() {
 export async function synchronizeWebMcpTools(route) {
   cleanupWebMcpTools()
 
-  if (!webMcpAvailable() || route !== '/design') {
+  if (!webMcpAvailable()) {
     return
   }
 
   const controller = new AbortController()
   registrationController = controller
-  const tools = gate5Tools()
+  const tools = gate6Tools(route)
+  if (tools.length === 0) {
+    setRegistrationState('inactive', 0)
+    return
+  }
   setRegistrationState('registering', 0)
 
   try {
@@ -166,8 +199,8 @@ export async function synchronizeWebMcpTools(route) {
   }
 }
 
-export async function executeGate5Tool(toolName, input = {}) {
-  const definition = gate5Tools().find((tool) => tool.name === toolName)
+export async function executeGate6Tool(toolName, input = {}) {
+  const definition = gate6Tools(workflowState.activeRoute).find((tool) => tool.name === toolName)
   if (!definition) {
     throw new Error(`TOOL_NOT_AVAILABLE: ${toolName}`)
   }

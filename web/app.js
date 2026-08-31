@@ -9,7 +9,7 @@ import {
 } from './state.js'
 import { mountBracketViewer } from './bracket-viewer.js'
 import {
-  executeGate5Tool,
+  executeGate6Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
 } from './webmcp.js'
@@ -61,7 +61,7 @@ function renderAgentConsole() {
     <section class="agent-console" aria-labelledby="agent-console-title">
       <div class="agent-console-heading">
         <div>
-          <p class="eyebrow">Gate 5 diagnostics</p>
+          <p class="eyebrow">Gate 6 diagnostics</p>
           <h2 id="agent-console-title">Agent-ready WebMCP surface</h2>
         </div>
         <span class="registration-badge" id="registration-badge">Checking</span>
@@ -78,6 +78,7 @@ function renderAgentConsole() {
         <button type="button" class="secondary-button" data-tool="inspect_cnc_manufacturability">Run CNC inspection</button>
         <button type="button" class="secondary-button" id="issue-details-button" data-tool="get_issue_details" disabled>Explain selected issue</button>
         <button type="button" class="secondary-button" id="preview-radius-button" data-tool="preview_radius_change" disabled>Preview 3.5 mm radius</button>
+        <button type="button" class="secondary-button" id="quote-comparison-button" data-tool="prepare_quote_comparison" disabled>Compare suppliers</button>
         <button type="button" class="quiet-button" id="reset-demo-button">Reset demo</button>
       </div>
 
@@ -174,17 +175,65 @@ function renderDesign() {
 }
 
 function renderSuppliers() {
+  const quotes = workflowState.supplierQuotes
+  if (quotes.length === 0) {
+    return `
+      <div class="page">
+        ${pageIntro(
+          'Supplier comparison',
+          'Compare controlled manufacturing options.',
+          'Two fictional suppliers return normalized prices, lead times, assumptions, and DFM feedback for the reviewed configuration.',
+        )}
+        <section class="empty-state">
+          <span>Gate 6</span>
+          <h2>No reviewed configuration has been quoted.</h2>
+          <p>Complete the inspection, preview a radius change, record a visible human decision, and run the comparison.</p>
+          <a class="button-link" href="/design" data-route>Return to design</a>
+        </section>
+      </div>
+    `
+  }
+
+  const request = workflowState.supplierRequests[0]
+  const money = (value, currency) => new Intl.NumberFormat('en-US', {
+    style: 'currency', currency, minimumFractionDigits: 2,
+  }).format(value)
   return `
     <div class="page">
       ${pageIntro(
         'Supplier comparison',
         'Compare controlled manufacturing options.',
-        'Two fictional suppliers will return normalized prices, lead times, assumptions, and DFM feedback for the reviewed configuration.',
+        'Two fictional suppliers return normalized prices, lead times, assumptions, and DFM feedback for the reviewed configuration.',
+        `<div class="part-chip"><span>Configuration</span><strong>${request.configurationHash}</strong></div>`,
       )}
-      <section class="empty-state">
-        <span>Gate 6</span>
-        <h2>Supplier fixtures are intentionally not connected yet.</h2>
-        <p>The comparison unlocks only after a visible human decision on the design preview.</p>
+      <aside class="compatibility-note warning-note">
+        <strong>Controlled fictional data</strong>
+        <span>AxisWorks and RapidMill are demonstration fixtures, not real suppliers or commercial offers. Their notes are treated as untrusted supplier content.</span>
+      </aside>
+      <section class="supplier-grid" aria-label="Normalized supplier quotes">
+        ${quotes.map((quote) => `
+          <article class="supplier-card">
+            <header>
+              <div><p class="eyebrow">${quote.factors.speed}</p><h2>${quote.supplierName}</h2></div>
+              <span>${quote.leadTimeDays} days</span>
+            </header>
+            <div class="quote-price"><strong>${money(quote.totalPrice, quote.currency)}</strong><span>${money(quote.unitPrice, quote.currency)} each · ${quote.quantity} parts</span></div>
+            <dl class="quote-breakdown">
+              <div><dt>Parts</dt><dd>${money(quote.partsSubtotal, quote.currency)}</dd></div>
+              <div><dt>Tooling</dt><dd>${money(quote.toolingCost, quote.currency)}</dd></div>
+              <div><dt>Cost profile</dt><dd>${quote.factors.cost.replace('_', ' ')}</dd></div>
+              <div><dt>Modeled risk</dt><dd>${quote.factors.risk}</dd></div>
+            </dl>
+            <section><h3>Assumptions</h3><ul>${quote.assumptions.map((item) => `<li>${item}</li>`).join('')}</ul></section>
+            <section><h3>DFM notes</h3><ul>${quote.dfmNotes.map((item) => `<li>${item}</li>`).join('')}</ul></section>
+            <footer><code>${quote.quoteId}</code></footer>
+          </article>
+        `).join('')}
+      </section>
+      <section class="comparison-summary">
+        <p class="eyebrow">Balanced comparison</p>
+        <h2>Cost and schedule point to different options.</h2>
+        <p>AxisWorks is the modeled value option. RapidMill is the modeled schedule option. Both carry the same moderate residual design risk, so the evidence stays visible instead of declaring an automatic winner.</p>
       </section>
     </div>
   `
@@ -221,8 +270,8 @@ function renderAbout() {
         <article><span>03</span><h2>Safe demonstration</h2><p>The challenge path uses controlled fixtures and makes no production-readiness claim.</p></article>
       </section>
       <section class="testing-instructions">
-        <h2>Testing the Gate 5 authority boundary</h2>
-        <p>Run the inspection, call <code>preview_radius_change</code> for the corner finding, and confirm the page shows ghosted before/after geometry. The tool must stop at a pending state; only the visible Approve preview or Reject button can record a human decision.</p>
+        <h2>Testing the Gate 6 comparison path</h2>
+        <p>Run the inspection, preview the 3.5 mm radius, record a visible human decision, then call <code>prepare_quote_comparison</code> with quantity 1000. Confirm two reproducible fictional quotes appear with different price, schedule, assumptions, and DFM notes.</p>
       </section>
     </div>
   `
@@ -364,6 +413,7 @@ function updateDiagnostics() {
   const findingsList = document.querySelector('#findings-list')
   const issueDetailsButton = document.querySelector('#issue-details-button')
   const previewRadiusButton = document.querySelector('#preview-radius-button')
+  const quoteComparisonButton = document.querySelector('#quote-comparison-button')
 
   if (!activeRoute || !toolCount || !lastCall || !registrationBadge || !auditEvents) {
     return
@@ -388,6 +438,10 @@ function updateDiagnostics() {
   if (previewRadiusButton) {
     previewRadiusButton.disabled = !workflowState.findings.some((finding) => finding.ruleId === 'CNC-R001')
       || Boolean(workflowState.proposedChange)
+  }
+  if (quoteComparisonButton) {
+    quoteComparisonButton.disabled = !['approved', 'rejected'].includes(workflowState.decisionStatus)
+      || workflowState.supplierQuotes.length > 0
   }
   bracketViewer?.setFindings(workflowState.findings)
   bracketViewer?.selectFeature(workflowState.selectedFeatureId)
@@ -437,13 +491,15 @@ function bindManualToolControls() {
               findingId: workflowState.findings.find((finding) => finding.ruleId === 'CNC-R001')?.findingId,
               proposedRadiusMm: 3.5,
             }
+          : toolName === 'prepare_quote_comparison'
+            ? { quantity: DESIGN_FIXTURE.quantity }
           : {}
 
       button.disabled = true
       output.textContent = `Calling ${toolName}…`
 
       try {
-        const result = await executeGate5Tool(toolName, input)
+        const result = await executeGate6Tool(toolName, input)
         output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
       } catch (error) {
         output.textContent = error?.message ?? 'Tool execution failed.'
@@ -508,6 +564,12 @@ document.addEventListener('click', (event) => {
 })
 
 window.addEventListener('popstate', () => void renderRoute())
+window.addEventListener('buildready:navigate', (event) => {
+  const route = event.detail?.route
+  if (!routes[route]) return
+  window.history.pushState({}, '', route)
+  void renderRoute()
+})
 window.addEventListener('buildready:statechange', updateDiagnostics)
 
 void renderRoute()

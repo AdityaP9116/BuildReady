@@ -839,6 +839,120 @@ h1 {
   color: var(--mint);
 }
 
+.warning-note {
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
+.warning-note strong {
+  color: var(--amber);
+}
+
+.supplier-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.supplier-card {
+  display: grid;
+  gap: 1.25rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+.supplier-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.supplier-card h2,
+.supplier-card h3,
+.supplier-card p {
+  margin: 0;
+}
+
+.supplier-card header > span {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--mint);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.quote-price {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.quote-price strong {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  letter-spacing: -0.05em;
+}
+
+.quote-price span,
+.supplier-card li,
+.supplier-card footer {
+  color: var(--muted);
+}
+
+.quote-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.quote-breakdown div {
+  padding: 0.8rem;
+  background: var(--bg);
+}
+
+.quote-breakdown dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.quote-breakdown dd {
+  margin: 0.25rem 0 0;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.supplier-card h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.supplier-card ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.65rem 0 0;
+  padding-left: 1.2rem;
+  line-height: 1.5;
+}
+
+.supplier-card footer {
+  overflow-wrap: anywhere;
+  font-size: 0.72rem;
+}
+
+.comparison-summary {
+  padding: clamp(1.5rem, 4vw, 3rem);
+}
+
+.comparison-summary h2 {
+  margin: 0.5rem 0;
+}
+
+.comparison-summary p:last-child {
+  max-width: 70ch;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
 .empty-state {
   padding: clamp(2rem, 5vw, 5rem);
   text-align: center;
@@ -922,6 +1036,7 @@ h1 {
 
   .workspace-grid,
   .principles-grid,
+  .supplier-grid,
   .agent-metrics,
   .findings-list {
     grid-template-columns: 1fr;

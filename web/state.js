@@ -1,6 +1,7 @@
 import { DESIGN_FIXTURE, RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js'
 import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rules.js'
 import { revisionPrecondition, validateRadiusProposal } from './workflow-rules.js'
+import { prepareQuoteComparison } from './quote-engine.js'
 
 export { DESIGN_FIXTURE }
 
@@ -256,6 +257,59 @@ async function previewRadiusChange(input, { signal } = {}) {
   }
 }
 
+async function prepareSupplierQuotes(input, { signal } = {}) {
+  abortIfRequested(signal)
+  const keys = Object.keys(input ?? {})
+  if (keys.length !== 1 || keys[0] !== 'quantity' || !Number.isInteger(input.quantity)) {
+    throw new TypeError('INVALID_INPUT: integer quantity is required.')
+  }
+
+  const comparison = prepareQuoteComparison({
+    fixture: DESIGN_FIXTURE,
+    proposal: workflowState.proposedChange,
+    decisionRecord: workflowState.decisionRecord,
+    quantity: input.quantity,
+  })
+  abortIfRequested(signal)
+
+  const generatedAt = new Date().toISOString()
+  workflowState.supplierRequests = [{
+    requestId: `request-${comparison.configurationHash}`,
+    configurationHash: comparison.configurationHash,
+    quantity: comparison.quantity,
+    generatedAt,
+  }]
+  workflowState.supplierQuotes = comparison.quotes.map((quote) => ({ ...quote, generatedAt }))
+  workflowState.errorState = null
+  emitStateChange()
+  requestToolAvailabilityRefresh()
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('buildready:navigate', { detail: { route: '/suppliers' } }))
+  }, 0)
+
+  return {
+    ok: true,
+    configurationHash: comparison.configurationHash,
+    configurationStatus: comparison.configurationStatus,
+    revisionPrecondition: comparison.revisionPrecondition,
+    quantity: comparison.quantity,
+    fixtureScope: comparison.fixtureScope,
+    quotes: comparison.quotes.map((quote) => ({
+      quoteId: quote.quoteId,
+      supplierName: quote.supplierName,
+      unitPrice: quote.unitPrice,
+      toolingCost: quote.toolingCost,
+      totalPrice: quote.totalPrice,
+      currency: quote.currency,
+      leadTimeDays: quote.leadTimeDays,
+      factors: quote.factors,
+      assumptionCount: quote.assumptions.length,
+      dfmNoteCount: quote.dfmNotes.length,
+    })),
+    nextAction: 'Compare the full assumptions and DFM notes now visible on the Suppliers page.',
+  }
+}
+
 export function recordHumanDecision(decision) {
   if (!['approved', 'rejected'].includes(decision)) return false
   if (!workflowState.proposedChange || workflowState.decisionStatus !== 'pending') return false
@@ -324,7 +378,7 @@ function audited(toolName, summary, handler) {
   }
 }
 
-export const gate5Handlers = Object.freeze({
+export const gate6Handlers = Object.freeze({
   get_active_design_context: audited(
     'get_active_design_context',
     'Returned BRKT-001 revision B with five stable feature records.',
@@ -344,5 +398,10 @@ export const gate5Handlers = Object.freeze({
     'preview_radius_change',
     'Prepared a bounded non-destructive radius preview requiring a visible human decision.',
     previewRadiusChange,
+  ),
+  prepare_quote_comparison: audited(
+    'prepare_quote_comparison',
+    'Prepared two normalized fictional supplier quotes for the human-reviewed configuration.',
+    prepareSupplierQuotes,
   ),
 })
