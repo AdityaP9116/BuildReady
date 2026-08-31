@@ -59,6 +59,11 @@ button:disabled {
   opacity: 0.45;
 }
 
+:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 3px;
+}
+
 .quiet-button {
   border-color: var(--line);
   color: var(--muted);
@@ -155,6 +160,18 @@ nav {
   gap: 0.75rem;
 }
 
+.workflow-progress {
+  color: var(--mint);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.header-reset {
+  padding: 0.5rem 0.7rem;
+  font-size: 0.75rem;
+}
+
 .tool-count,
 .registration-badge {
   padding: 0.3rem 0.55rem;
@@ -201,6 +218,146 @@ nav {
 
 .page-intro > div:first-child {
   max-width: 54rem;
+}
+
+.onboarding-card {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.9fr) minmax(30rem, 1.4fr) auto;
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  margin-bottom: 1rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid;
+  border-radius: 0.9rem;
+  border-color: color-mix(in srgb, var(--mint) 38%, var(--line));
+  background:
+    linear-gradient(120deg, rgb(120 240 176 / 7%), transparent 45%),
+    var(--panel);
+}
+
+.onboarding-card h2 {
+  margin-bottom: 0.5rem;
+  font-size: clamp(1.25rem, 2vw, 1.7rem);
+}
+
+.onboarding-card p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.onboarding-card > .button-link {
+  text-align: center;
+}
+
+.onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-steps li {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: var(--bg);
+}
+
+.onboarding-steps li > span {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.onboarding-steps li.complete {
+  border-color: var(--mint);
+}
+
+.onboarding-steps li.complete > span {
+  border-color: var(--mint);
+  color: var(--bg);
+  background: var(--mint);
+}
+
+.onboarding-steps small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.how-webmcp {
+  margin-top: 1rem;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--panel);
+}
+
+.how-webmcp ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.how-webmcp li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: var(--bg);
+}
+
+.how-webmcp li > span {
+  color: var(--mint);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.how-webmcp li p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.trust-boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.trust-boundary-grid article {
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--panel);
+}
+
+.trust-boundary-grid h2 {
+  font-size: 1.15rem;
+}
+
+.trust-boundary-grid p:last-child {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .eyebrow {
@@ -1165,6 +1322,7 @@ h1 {
   .principles-grid,
   .supplier-grid,
   .review-summary-grid,
+  .trust-boundary-grid,
   .agent-metrics,
   .findings-list {
     grid-template-columns: 1fr;
@@ -1173,6 +1331,14 @@ h1 {
   .page-intro {
     align-items: start;
     flex-direction: column;
+  }
+
+  .onboarding-card {
+    grid-template-columns: 1fr;
+  }
+
+  .how-webmcp ol {
+    grid-template-columns: 1fr;
   }
 
   .measurement-panel {
@@ -1192,12 +1358,17 @@ h1 {
 @media (max-width: 520px) {
   .brand small,
   .protocol-status strong,
-  .tool-count {
+  .tool-count,
+  .workflow-progress {
     display: none;
   }
 
   .site-header {
     padding: 0.8rem 1rem;
+  }
+
+  .agent-status {
+    gap: 0.45rem;
   }
 
   .nav-link {
@@ -1223,6 +1394,10 @@ h1 {
 
   .proposal-comparison {
     grid-template-columns: 1fr;
+  }
+
+  .onboarding-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .review-quote-list {

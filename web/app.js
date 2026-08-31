@@ -27,6 +27,8 @@ const routes = {
 const app = document.querySelector('#app')
 const webMcpStatus = document.querySelector('#webmcp-status')
 const headerToolCount = document.querySelector('#header-tool-count')
+const workflowProgress = document.querySelector('#workflow-progress')
+const globalResetButton = document.querySelector('#global-reset-button')
 let bracketViewer = null
 let findingsSignature = ''
 
@@ -113,6 +115,20 @@ function renderDesign() {
         'BuildReady binds the active bracket, revision, selected feature, and controlled workflow state to a focused WebMCP tool surface.',
         '<div class="part-chip"><span>Sample fixture</span><strong>BRKT-001-B</strong></div>',
       )}
+      <section class="onboarding-card" aria-labelledby="onboarding-title">
+        <div>
+          <p class="eyebrow">Guided challenge path</p>
+          <h2 id="onboarding-title">From design evidence to a portable review in four decisions.</h2>
+          <p>Start with the controlled revision, let the agent prepare evidence, keep approval human, then carry the same configuration into quotes and exports.</p>
+        </div>
+        <ol class="onboarding-steps">
+          <li id="onboarding-inspection"><span>1</span><strong>Inspect</strong><small>Five deterministic rules</small></li>
+          <li id="onboarding-decision"><span>2</span><strong>Decide</strong><small>Visible human authority</small></li>
+          <li id="onboarding-quotes"><span>3</span><strong>Compare</strong><small>Two fictional suppliers</small></li>
+          <li id="onboarding-package"><span>4</span><strong>Package</strong><small>JSON + Markdown</small></li>
+        </ol>
+        <a class="button-link" href="#agent-console-title">Start with the agent-ready tools</a>
+      </section>
       <section class="workspace-grid" aria-label="BuildReady workflow foundation">
         <section class="viewer-stage" aria-labelledby="viewer-title">
           <div class="viewer-heading">
@@ -317,8 +333,22 @@ function renderAbout() {
         <article><span>02</span><h2>Human authority</h2><p>The agent can prepare a change, but only the visible engineer control can approve it.</p></article>
         <article><span>03</span><h2>Safe demonstration</h2><p>The challenge path uses controlled fixtures and makes no production-readiness claim.</p></article>
       </section>
+      <section class="how-webmcp" aria-labelledby="how-webmcp-title">
+        <div class="review-section-heading"><div><p class="eyebrow">How WebMCP works here</p><h2 id="how-webmcp-title">The page publishes only the action valid right now.</h2></div><span class="stage-status ready">route + state scoped</span></div>
+        <ol>
+          <li><span>01</span><div><strong>Page-owned contracts</strong><p>BuildReady defines strict names, descriptions, JSON schemas, safety annotations, and handlers.</p></div></li>
+          <li><span>02</span><div><strong>Conditional registration</strong><p>Inspection unlocks details; a human decision unlocks quotes; complete quotes unlock the package.</p></div></li>
+          <li><span>03</span><div><strong>Visible evidence</strong><p>Every tool updates the same model, cards, audit history, or review package the engineer sees.</p></div></li>
+          <li><span>04</span><div><strong>Cleanup by default</strong><p>Leaving a route aborts its registrations, preventing stale or duplicate actions.</p></div></li>
+        </ol>
+      </section>
+      <section class="trust-boundary-grid">
+        <article><p class="eyebrow">Agent may</p><h2>Read, inspect, preview, compare, package</h2><p>These bounded actions produce evidence and reversible session state.</p></article>
+        <article><p class="eyebrow">Human only</p><h2>Approve or reject the preview</h2><p>No WebMCP approval, production-release, purchase, or geometry-commit tool exists.</p></article>
+        <article><p class="eyebrow">Untrusted data</p><h2>Supplier assumptions and notes</h2><p>They remain visible evidence and can never change authority or tool availability.</p></article>
+      </section>
       <section class="testing-instructions">
-        <h2>Testing the Gate 7 evidence path</h2>
+        <h2>Testing the complete challenge path</h2>
         <p>Complete the inspected, human-reviewed, and quoted flow, then call <code>generate_review_package</code>. Confirm the Review page matches the visible workflow and both JSON and Markdown downloads contain the package ID, versions, findings, decision, quotes, audit trail, and disclaimer.</p>
       </section>
     </div>
@@ -451,6 +481,16 @@ function updateDiagnostics() {
   webMcpStatus.classList.toggle('supported', available)
   webMcpStatus.querySelector('small').textContent = available ? 'Available' : 'Compatibility mode'
   headerToolCount.textContent = `${workflowState.registeredToolCount} ${workflowState.registeredToolCount === 1 ? 'tool' : 'tools'}`
+  const completedStages = [
+    workflowState.inspectionStatus === 'complete',
+    ['approved', 'rejected'].includes(workflowState.decisionStatus),
+    workflowState.supplierQuotes.length === 2,
+    Boolean(workflowState.reviewPackage),
+  ]
+  workflowProgress.textContent = `${completedStages.filter(Boolean).length}/4 complete`
+  ;['inspection', 'decision', 'quotes', 'package'].forEach((stage, index) => {
+    document.querySelector(`#onboarding-${stage}`)?.classList.toggle('complete', completedStages[index])
+  })
 
   const activeRoute = document.querySelector('#active-route')
   const toolCount = document.querySelector('#registered-tool-count')
@@ -638,5 +678,11 @@ window.addEventListener('buildready:navigate', (event) => {
   void renderRoute()
 })
 window.addEventListener('buildready:statechange', updateDiagnostics)
+
+globalResetButton.addEventListener('click', () => {
+  resetDemoState()
+  window.history.pushState({}, '', '/design')
+  void renderRoute()
+})
 
 void renderRoute()

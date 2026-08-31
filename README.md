@@ -4,7 +4,7 @@ BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlle
 
 ## Project status
 
-Gate 8 hardens the complete evidence path for adversarial and cross-route use. Tool failures now carry bounded, machine-readable error metadata; registration is state- and route-scoped with abort cleanup; supplier-derived content is explicitly untrusted; and local and deployed responses share restrictive security headers. A 14-case prompt suite covers success, invalid input, authority, premature actions, and injection-shaped requests.
+Gate 9 presents the complete, hardened workflow as a guided product experience. A persistent header reports progress and offers a full reset, the design page introduces the four-stage evidence path, and the About page explains the WebMCP lifecycle and trust boundaries. Responsive and keyboard-visible states are polished, and feature scope is frozen for final submission preparation.
 
 ## Planned challenge workflow
 
@@ -44,7 +44,7 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-## Gate 8 WebMCP tools
+## Gate 9 WebMCP tools
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
@@ -99,6 +99,12 @@ Approval is intentionally absent from the WebMCP surface. The visible UI records
 `web/error-contract.js` normalizes tool failures to `{ ok: false, error: { code, message, retryable } }` for the visible fallback console and attaches the same fields to thrown WebMCP errors. Messages are bounded, workflow errors use stable codes, stale-state failures say when retry is appropriate, and every input schema rejects unknown properties.
 
 `web/_headers` and the local uv-served development response apply the same CSP, same-origin WebMCP permissions policy, referrer isolation, MIME sniffing protection, and opener isolation. The canonical prompt suite and its manual browser matrix are documented in `tests/evals/webmcp-prompts.json` and `docs/evaluation-plan.md`.
+
+### Guided experience and feature freeze
+
+The persistent header shows completed stages across every route and resets the entire derived workflow from anywhere. The initial design workspace explains Inspect → Decide → Compare → Package before presenting the evidence scene, and `/about` documents page-owned contracts, conditional registration, visible evidence, cleanup, and the separation between agent actions, human authority, and untrusted supplier data.
+
+The frozen post–Gate 9 scope and required final screenshot states are recorded in `docs/feature-freeze.md`. Gate 10 is limited to defect fixes, documentation, submission materials, capture guidance, deployment configuration, and external verification.
 
 ### Controlled rule set
 
