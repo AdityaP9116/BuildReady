@@ -130,6 +130,24 @@ ONSHAPE_ELEMENT_ID=…
 Then run `uv run --env-file .env python scripts/serve.py` and load the live
 model from `/design`. `uv` does not load `.env` unless `--env-file` is supplied.
 
+### Check for and activate a newer revision
+
+Once a live model is active, use **Check Onshape for updates** or call
+`check_onshape_revision`. The check is read-only: it keeps the current snapshot,
+findings, proposal, quotes, and review evidence in place while reporting the
+candidate microversion and changed measurement keys.
+
+If a newer microversion is available, activate it with the visible control or
+`activate_onshape_revision`. Activation requires the expected current revision,
+the exact checked candidate revision, and an explicit acknowledgement when old
+revision-bound evidence exists. The measurement panel, schematic viewer, design
+context, and tool descriptions switch together. Old findings and downstream
+records are cleared, so run inspection again against the new snapshot.
+
+The live values remain runtime state and never modify checked-in fixture JSON.
+Generated review JSON and Markdown retain the Onshape document, workspace,
+element, microversion, retrieval time, feature dimensions, and evidence links.
+
 ---
 
 ## 3. On the public deployment

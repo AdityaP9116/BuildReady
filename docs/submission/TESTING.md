@@ -11,13 +11,15 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
-Gate 9 application baseline on 2026-08-31: 38 tests passed. Gate 10 packet baseline: 43 tests passed. Source checks passed, the deterministic build produced 16 static files, and `git diff --check` passed.
+On 2026-09-01, 83 Python tests and four zero-package Cloudflare Function
+contract tests passed. Source checks passed, the deterministic build produced 19
+static files, and `git diff --check` passed.
 
 ## Verified client
 
 | Client | Environment | Result | Notes |
 | --- | --- | --- | --- |
-| ChatGPT in-app browser | Local `http://127.0.0.1:4173` | Pass | Complete tool path, route cleanup, annotations, visible state, progress/reset, CSP response, and console checked. |
+| ChatGPT in-app browser | Local uv server + offline Onshape mock | Pass | Different live measurements updated the UI/viewer; a newer microversion was detected and activated; old evidence cleared; the complete live review path produced schema 1.1 provenance with no console errors. |
 | Chrome 149+ WebMCP testing | Public deployment | TODO | Repeat full golden path with the testing flag enabled. |
 | Fresh/incognito profile | Public deployment | TODO | Confirm no cached module or state dependency. |
 | Second machine/profile | Public deployment | TODO | Confirm external reachability and layout. |
@@ -26,13 +28,14 @@ Gate 9 application baseline on 2026-08-31: 38 tests passed. Gate 10 packet basel
 
 | Stage | Route | Expected tools | Visible proof |
 | --- | --- | --- | --- |
-| Initial | `/design` | 2 | Controlled BRKT-001-B context; 0/4 complete. |
-| Inspected | `/design` | 4 | Five findings; two high, three medium; synchronized evidence. |
-| Pending proposal | `/design` | 3 | Ghosted 1.0 → 3.5 mm preview; human buttons enabled; no approval tool. |
-| Human decision | `/design` | 4 | Audit actor `human`; quote tool available. |
+| Initial | `/design` | 2 fixture-only / 3 configured | Controlled BRKT-001-B context; optional Onshape loader; 0/4 complete. |
+| Inspected live source | `/design` | 5 | Five findings; source-aware context/inspection/check tools; synchronized evidence. |
+| Pending proposal | `/design` | 4 | Ghosted 1.0 → 3.5 mm preview; human buttons enabled; no approval tool. |
+| Human decision | `/design` | 5 | Audit actor `human`; quote tool available. |
 | Quoted | `/suppliers` | 1 | Two fictional supplier cards; hash `fnv1a-28daab8d`; 3/4 complete. |
 | Packaged | `/review` | 0 | Five findings, one decision, two quotes, two download formats; 4/4 complete. |
-| Reset | `/design` | 2 | No findings or derived records; 0/4 complete. |
+| Activated update | `/design` | 3 | New snapshot visible; previous findings cleared; update check remains available. |
+| Restored fixture | `/design` | 3 configured / 2 fixture-only | No findings or derived records; controlled measurements restored; 0/4 complete. |
 
 ## Boundary and adversarial checks
 

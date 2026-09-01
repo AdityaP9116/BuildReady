@@ -15,6 +15,36 @@
       "pass": "Returns five deterministic findings: two high and three medium."
     },
     {
+      "id": "onshape-load",
+      "prompt": "Load the connected Onshape Part Studio and tell me which revision is now active.",
+      "expectedTools": ["load_onshape_design"],
+      "pass": "Activates the Onshape microversion, clears prior derived evidence, and reports the revision and untrusted source provenance."
+    },
+    {
+      "id": "onshape-check-unchanged",
+      "prompt": "Check whether the active Onshape model changed, but do not discard my current work.",
+      "expectedTools": ["check_onshape_revision"],
+      "pass": "Reports changed false and preserves all revision-bound evidence."
+    },
+    {
+      "id": "onshape-check-changed",
+      "prompt": "Check Onshape for a newer model revision without activating it.",
+      "expectedTools": ["check_onshape_revision"],
+      "pass": "Reports both microversions and the changed measurement keys while leaving the active snapshot unchanged."
+    },
+    {
+      "id": "onshape-activate-guarded",
+      "prompt": "Activate the checked Onshape revision without discarding my completed inspection.",
+      "expectedTools": ["activate_onshape_revision"],
+      "pass": "Returns DERIVED_EVIDENCE_EXISTS unless discardDerivedEvidence is explicitly true."
+    },
+    {
+      "id": "onshape-activate-confirmed",
+      "prompt": "Activate the checked revision and explicitly discard evidence from the old snapshot.",
+      "expectedTools": ["activate_onshape_revision"],
+      "pass": "Activates exactly the checked candidate, clears old evidence, updates the visible design, and directs the agent to inspect again."
+    },
+    {
       "id": "invalid-severity",
       "prompt": "Inspect only critical findings.",
       "expectedTools": ["inspect_cnc_manufacturability"],

@@ -76,19 +76,21 @@ single project command entry point.
 
 | Tool | Availability | Behavior |
 | --- | --- | --- |
-| `get_active_design_context` | `/design` | Returns the controlled BRKT-001 revision B context, material, process, quantity, selected feature, preview state, inspection state, and rule-set version. |
+| `get_active_design_context` | `/design` | Returns the active fixture or Onshape snapshot, source provenance, material, process, quantity, selected feature, preview state, inspection state, and rule-set version. |
 | `inspect_cnc_manufacturability` | `/design` | Evaluates internal corner radius, pocket aspect ratio, thin-wall thickness, drilled-hole depth ratio, and mounting-hole tolerance against versioned demonstration thresholds. Returns five stable findings for the default fixture. |
 | `get_issue_details` | `/design`, after inspection | Returns one finding's deterministic measurements, threshold, calculation, consequence, recommendation, evidence references, and 3D highlight target. Selecting it focuses the same feature in the canvas and text panel. |
 | `preview_radius_change` | `/design`, after the corner finding and before a proposal exists | Prepares a 3.5–5.0 mm inside-radius preview with before/after geometry and a pending human decision. It cannot approve, reject, or commit the proposal. |
 | `prepare_quote_comparison` | `/design`, after a visible human decision and before quotes exist | Calculates two normalized fictional supplier quotes for a supported quantity. Supplier assumptions and DFM notes are marked as untrusted content. |
 | `generate_review_package` | `/suppliers`, after two quotes and before a package exists | Validates completeness and creates a traceable evidence package. Its compact tool response points to the full visible Review page and JSON/Markdown downloads. |
 | `load_onshape_design` | `/design`, only when an Onshape proxy is reachable and before an inspection exists | Reads live variable measurements from the connected Onshape Part Studio and makes them the active design. Discards derived state because the geometry changed. Optional; absent on deployments without Onshape credentials. |
+| `check_onshape_revision` | `/design`, while an Onshape snapshot is active | Reads the source again and reports whether its immutable microversion and measurements changed without disturbing the active snapshot or its evidence. |
+| `activate_onshape_revision` | `/design`, only after a newer revision is found | Activates exactly the checked candidate. It enforces old/new revision preconditions and requires explicit acknowledgement before discarding revision-bound evidence. |
 
 The tools use the imperative `document.modelContext.registerTool` API. Registration is guarded for unsupported browsers, scoped to `/design`, and connected to an `AbortController` so route changes unregister the tools. Handlers receive and respect the execution `AbortSignal`.
 
 To test manually in a WebMCP-capable browser:
 
-1. Open `/design` and confirm the diagnostic panel initially reports two registered tools.
+1. Open `/design` and confirm the diagnostic panel initially reports two registered tools in fixture-only mode or three when Onshape is configured.
 2. Inspect the page tools in Chrome DevTools or the Model Context Tool Inspector.
 3. Execute `get_active_design_context` with `{}`.
 4. Execute `inspect_cnc_manufacturability` with `{ "severity": "all" }`.
@@ -165,6 +167,11 @@ finding — proving the engine reacts to real model state rather than a canned
 answer. Only literal length expressions are accepted; arithmetic and
 variable references are rejected rather than guessed at.
 
+The visible canvas is a schematic evidence scene, not an imported Onshape BREP.
+Its supported pocket, corner, wall, and hole indicators are rebuilt from the
+active measurements, while the adjacent measurement panel remains the exact
+numeric source of truth.
+
 **Trust boundary.** Onshape document text is external content: the tool carries
 `untrustedContentHint`, the proxy bounds every string, and the UI renders
 document names with `textContent` only. `connect-src 'self'` is unchanged
@@ -173,6 +180,18 @@ precondition, so an inspection taken before a model edit is detectably stale.
 No agent-callable path writes to Onshape; the recorded write-back policy permits
 a new branch workspace only, after a visible human approval, and is not yet
 implemented.
+
+**Revision refresh.** After loading Onshape, `check_onshape_revision` compares a
+fresh read with the active microversion without disturbing current evidence. If
+it finds a change, `activate_onshape_revision` requires the expected current and
+candidate revisions plus an explicit evidence-discard acknowledgement. The
+design snapshot, viewer, measurements, tool contracts, and audit state then
+switch atomically, and inspection must run again.
+
+Live measurements are runtime state. They never overwrite `cnc-domain.json`,
+`onshape-source.json`, or other checked-in fixtures. Generated review JSON and
+Markdown instead preserve the snapshot key, source IDs, complete microversion,
+retrieval time, feature measurements, and `onshape://` evidence references.
 
 **Robustness.** Bad credentials and deleted elements fail fast; rate limits and
 transient 5xx are retried with exponential backoff honouring `Retry-After`; each
