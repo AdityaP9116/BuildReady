@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from scripts.mock_onshape import UPDATED_VARIABLES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -11,6 +13,8 @@ class ActiveDesignSnapshotTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.state = (ROOT / "web" / "state.js").read_text(encoding="utf-8")
+        cls.app = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+        cls.viewer = (ROOT / "web" / "bracket-viewer.js").read_text(encoding="utf-8")
 
     def test_one_snapshot_owns_design_source_and_revision(self) -> None:
         self.assertIn("activeDesignSnapshot: createDesignSnapshot", self.state)
@@ -31,6 +35,23 @@ class ActiveDesignSnapshotTests(unittest.TestCase):
         self.assertIn("let onshapeLoadSequence = 0", self.state)
         self.assertIn("requestSequence !== onshapeLoadSequence", self.state)
         self.assertIn("STALE_SOURCE_LOAD", self.state)
+
+    def test_visible_workspace_reads_the_active_design(self) -> None:
+        self.assertNotIn("DESIGN_FIXTURE.features", self.app)
+        self.assertIn("activeDesign().features.find", self.app)
+        self.assertIn("function synchronizeDesignWorkspace()", self.app)
+        self.assertIn("bracketViewer.setDesign(activeDesign())", self.app)
+        self.assertIn("activeDesign().quantity", self.app)
+
+    def test_viewer_can_replace_its_design_and_geometry(self) -> None:
+        self.assertIn("setDesign(fixture)", self.viewer)
+        self.assertIn("createParametricBracketScene(fixture)", self.viewer)
+        self.assertIn("revision ${this.fixture.revisionId}", self.viewer)
+
+    def test_browser_regression_variant_differs_from_the_fixture(self) -> None:
+        self.assertEqual("4 mm", UPDATED_VARIABLES["insideRadius"])
+        self.assertEqual("2 mm", UPDATED_VARIABLES["wallThickness"])
+        self.assertEqual("0.08 mm", UPDATED_VARIABLES["mountingTolerance"])
 
 
 if __name__ == "__main__":

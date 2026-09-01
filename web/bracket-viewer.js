@@ -66,28 +66,46 @@ function ring(meshId, featureId, center, outerRadius, innerRadius, height, color
   return { meshId, featureId, color, vertices, faces }
 }
 
-function pocketCorner(meshId, x, y) {
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, value))
+}
+
+function dimension(fixture, featureId, key, fallback) {
+  return fixture?.features.find((feature) => feature.featureId === featureId)?.dimensions?.[key] ?? fallback
+}
+
+function pocketCorner(meshId, x, y, radiusMm) {
+  const markerRadius = clamp(0.18 + radiusMm * 0.08, 0.24, 0.62)
   return cuboid(
     meshId,
     'inside-pocket-corner',
-    { x: x - 0.28, y: y - 0.28, z: 1.02 },
-    { x: x + 0.28, y: y + 0.28, z: 1.42 },
+    { x: x - markerRadius, y: y - markerRadius, z: 1.02 },
+    { x: x + markerRadius, y: y + markerRadius, z: 1.42 },
     '#648579',
   )
 }
 
-export function createParametricBracketScene() {
+export function createParametricBracketScene(fixture) {
+  const insideRadius = dimension(fixture, 'inside-pocket-corner', 'insideRadiusMm', 1)
+  const pocketWidth = clamp(dimension(fixture, 'deep-pocket', 'minWidthMm', 6) * 0.45, 1.8, 4.2)
+  const wallWidth = clamp(dimension(fixture, 'thin-wall', 'thicknessMm', 0.8) * 1.25, 0.45, 2.2)
+  const deepHoleDiameter = dimension(fixture, 'deep-drilled-hole', 'diameterMm', 5)
+  const deepHoleDepth = dimension(fixture, 'deep-drilled-hole', 'depthMm', 30)
+  const mountingDiameter = dimension(fixture, 'mounting-hole-tolerance', 'diameterMm', 8)
+  const mountingTolerance = dimension(fixture, 'mounting-hole-tolerance', 'tolerancePlusMinusMm', 0.02)
+  const deepOuterRadius = clamp(deepHoleDiameter * 0.144, 0.42, 1.2)
+  const mountingOuterRadius = clamp(mountingDiameter * 0.095, 0.5, 1.25)
   return Object.freeze([
     cuboid('mesh-base-plate', null, { x: -6, y: -4, z: 0 }, { x: 6, y: 4, z: 1 }, '#36574d'),
     cuboid('mesh-vertical-flange', null, { x: -6, y: -4, z: 1 }, { x: -5, y: 4, z: 7 }, '#41675b'),
-    cuboid('mesh-deep-pocket-floor', 'deep-pocket', { x: -2.7, y: -1.65, z: 1.01 }, { x: 2.7, y: 1.65, z: 1.22 }, '#243d36'),
-    pocketCorner('mesh-pocket-corner-nw', -2.45, -1.4),
-    pocketCorner('mesh-pocket-corner-ne', 2.45, -1.4),
-    pocketCorner('mesh-pocket-corner-sw', -2.45, 1.4),
-    pocketCorner('mesh-pocket-corner-se', 2.45, 1.4),
-    cuboid('mesh-thin-wall', 'thin-wall', { x: 3.2, y: 2.55, z: 1.02 }, { x: 4.2, y: 3.25, z: 2.45 }, '#52786b'),
-    ring('mesh-deep-hole-ring', 'deep-drilled-hole', { x: -3.5, y: 2.7, z: 1.18 }, 0.72, 0.38, 0.2, '#4d7568'),
-    ring('mesh-mounting-hole-ring', 'mounting-hole-tolerance', { x: 1.8, y: 3, z: 1.18 }, 0.76, 0.43, 0.2, '#4d7568'),
+    cuboid('mesh-deep-pocket-floor', 'deep-pocket', { x: -pocketWidth, y: -1.65, z: 1.01 }, { x: pocketWidth, y: 1.65, z: 1.22 }, '#243d36'),
+    pocketCorner('mesh-pocket-corner-nw', -2.45, -1.4, insideRadius),
+    pocketCorner('mesh-pocket-corner-ne', 2.45, -1.4, insideRadius),
+    pocketCorner('mesh-pocket-corner-sw', -2.45, 1.4, insideRadius),
+    pocketCorner('mesh-pocket-corner-se', 2.45, 1.4, insideRadius),
+    cuboid('mesh-thin-wall', 'thin-wall', { x: 3.2, y: 2.55, z: 1.02 }, { x: 3.2 + wallWidth, y: 3.25, z: 2.45 }, '#52786b'),
+    ring('mesh-deep-hole-ring', 'deep-drilled-hole', { x: -3.5, y: 2.7, z: 1.18 }, deepOuterRadius, deepOuterRadius * 0.53, clamp(deepHoleDepth / 150, 0.12, 0.4), '#4d7568'),
+    ring('mesh-mounting-hole-ring', 'mounting-hole-tolerance', { x: 1.8, y: 3, z: 1.18 }, mountingOuterRadius, clamp(mountingOuterRadius - 0.28 - mountingTolerance * 2.5, 0.2, 0.95), 0.2, '#4d7568'),
   ])
 }
 
@@ -134,7 +152,7 @@ export class BracketViewer {
     this.context = canvas.getContext('2d')
     this.onFeatureSelect = onFeatureSelect
     this.onFeatureHover = onFeatureHover
-    this.meshes = createParametricBracketScene()
+    this.meshes = createParametricBracketScene(fixture)
     this.featureLabels = new Map(fixture.features.map((feature) => [feature.featureId, feature.label]))
     this.issueSeverities = new Map()
     this.proposal = null
@@ -376,6 +394,19 @@ export class BracketViewer {
     this.render()
   }
 
+  setDesign(fixture) {
+    this.fixture = fixture
+    this.featureLabels = new Map(fixture.features.map((feature) => [feature.featureId, feature.label]))
+    this.meshes = createParametricBracketScene(fixture)
+    if (!fixture.features.some((feature) => feature.featureId === this.selectedFeatureId)) {
+      this.selectedFeatureId = fixture.features.find((feature) => feature.selected)?.featureId ?? null
+    }
+    this.issueSeverities = new Map()
+    this.proposal = null
+    this.updateAccessibleLabel()
+    this.render()
+  }
+
   setProposal(proposal) {
     this.proposal = proposal
     this.render()
@@ -441,7 +472,7 @@ export class BracketViewer {
     const label = this.featureLabels.get(this.selectedFeatureId) ?? 'none'
     this.canvas.setAttribute(
       'aria-label',
-      `Interactive isometric CNC bracket. Selected feature: ${label}. Use arrow keys to move between five features; Home resets the camera.`,
+      `Schematic isometric CNC bracket for ${this.fixture.designId} revision ${this.fixture.revisionId}. Selected feature: ${label}. Use arrow keys to move between five features; Home resets the camera.`,
     )
   }
 }

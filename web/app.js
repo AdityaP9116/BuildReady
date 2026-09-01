@@ -1,6 +1,6 @@
 import {
-  DESIGN_FIXTURE,
   activeDesign,
+  activeSnapshotKey,
   gate7Handlers,
   recordHumanDecision,
   resetDemoState,
@@ -36,6 +36,7 @@ const workflowProgress = document.querySelector('#workflow-progress')
 const globalResetButton = document.querySelector('#global-reset-button')
 let bracketViewer = null
 let findingsSignature = ''
+let viewerSnapshotKey = ''
 
 function pageIntro(eyebrow, title, description, aside = '') {
   return `
@@ -117,14 +118,14 @@ function renderDesign() {
       ${pageIntro(
         'Design workspace',
         'Prepare a CNC design with your agent.',
-        'BuildReady binds the active bracket, revision, selected feature, and controlled workflow state to a focused WebMCP tool surface.',
-        '<div class="part-chip"><span>Sample fixture</span><strong>BRKT-001-B</strong></div>',
+        'BuildReady binds the active bracket, revision, selected feature, and review state to a focused WebMCP tool surface.',
+        '<div class="part-chip"><span id="part-chip-source">Design snapshot</span><strong id="part-chip-id"></strong></div>',
       )}
       <section class="onboarding-card" aria-labelledby="onboarding-title">
         <div>
           <p class="eyebrow">Guided challenge path</p>
           <h2 id="onboarding-title">From design evidence to a portable review in four decisions.</h2>
-          <p>Start with the controlled revision, let the agent prepare evidence, keep approval human, then carry the same configuration into quotes and exports.</p>
+          <p>Start with the active revision, let the agent prepare evidence, keep approval human, then carry the same configuration into quotes and exports.</p>
         </div>
         <ol class="onboarding-steps">
           <li id="onboarding-inspection"><span>1</span><strong>Inspect</strong><small>Five deterministic rules</small></li>
@@ -151,7 +152,7 @@ function renderDesign() {
           <div class="viewer-heading">
             <div>
               <p class="eyebrow">Parametric evidence scene</p>
-              <h2 id="viewer-title">BRKT-001-B</h2>
+              <h2 id="viewer-title"></h2>
             </div>
             <button type="button" class="secondary-button compact-button" id="reset-camera">Reset camera</button>
           </div>
@@ -174,9 +175,9 @@ function renderDesign() {
         </section>
         <div class="stage-list">
           ${stageCard('01', 'Read design context', 'The live WebMCP tool exposes the active part, process, quantity, revision, and selected feature.', 'ready')}
-          ${stageCard('02', 'Inspect manufacturability', 'Five deterministic rules now measure the revision-B corner, pocket, wall, drilled hole, and tolerance features.', 'ready')}
+          ${stageCard('02', 'Inspect manufacturability', 'Five deterministic rules measure the active corner, pocket, wall, drilled hole, and tolerance features.', 'ready')}
           ${stageCard('03', 'Focus visual evidence', 'Issue selection, hover, camera focus, measurements, and keyboard alternatives stay synchronized with agent calls.', 'ready')}
-          ${stageCard('04', 'Preview a correction', 'Prepare bounded before/after geometry while revision B remains unchanged.', 'ready')}
+          ${stageCard('04', 'Preview a correction', 'Prepare bounded before/after geometry while the loaded revision remains unchanged.', 'ready')}
           ${stageCard('05', 'Record human authority', 'Only the visible engineer controls can approve or reject the pending preview.', 'ready')}
         </div>
       </section>
@@ -193,7 +194,7 @@ function renderDesign() {
           <span id="proposal-status">Pending</span>
         </div>
         <div class="proposal-comparison">
-          <div><span>Before</span><strong id="proposal-before">1.0 mm</strong><small>Revision B fixture</small></div>
+          <div><span>Before</span><strong id="proposal-before">1.0 mm</strong><small id="proposal-revision"></small></div>
           <div aria-hidden="true">→</div>
           <div><span>After</span><strong id="proposal-after">3.5 mm</strong><small>Non-destructive preview</small></div>
         </div>
@@ -405,7 +406,7 @@ function measurementValue(value) {
 }
 
 function renderViewerSelection() {
-  const feature = DESIGN_FIXTURE.features.find(
+  const feature = activeDesign().features.find(
     (candidate) => candidate.featureId === workflowState.selectedFeatureId,
   )
   if (!feature) return
@@ -484,6 +485,7 @@ function renderProposal() {
 
   document.querySelector('#proposal-before').textContent = `${proposal.before.insideRadiusMm} mm`
   document.querySelector('#proposal-after').textContent = `${proposal.after.insideRadiusMm} mm`
+  document.querySelector('#proposal-revision').textContent = `Revision ${activeDesign().revisionId} snapshot`
   document.querySelector('#proposal-effect').textContent = proposal.expectedCostEffect
   const status = document.querySelector('#proposal-status')
   status.textContent = workflowState.decisionStatus.replace('_', ' ')
@@ -588,6 +590,30 @@ function renderDesignSource() {
   restoreButton.hidden = !isLive
 }
 
+function renderDesignIdentity() {
+  const design = activeDesign()
+  const source = workflowState.designSource
+  const identity = `${design.designId}-${design.revisionId}`
+  const sourceLabel = source.sourceId === 'onshape-live' ? 'Onshape snapshot' : 'Sample fixture'
+  const chipSource = document.querySelector('#part-chip-source')
+  const chipId = document.querySelector('#part-chip-id')
+  const viewerTitle = document.querySelector('#viewer-title')
+  if (chipSource) chipSource.textContent = sourceLabel
+  if (chipId) chipId.textContent = identity
+  if (viewerTitle) viewerTitle.textContent = identity
+}
+
+function synchronizeDesignWorkspace() {
+  renderDesignIdentity()
+  renderDesignSource()
+  const nextSnapshotKey = activeSnapshotKey()
+  if (bracketViewer && viewerSnapshotKey !== nextSnapshotKey) {
+    bracketViewer.setDesign(activeDesign())
+    viewerSnapshotKey = nextSnapshotKey
+  }
+  renderViewerSelection()
+}
+
 function bindDesignSourceControls() {
   document.querySelector('#load-onshape-source')?.addEventListener('click', async () => {
     const button = document.querySelector('#load-onshape-source')
@@ -616,6 +642,7 @@ function bindBracketViewer() {
   bracketViewer = mountBracketViewer(canvas, activeDesign(), {
     onFeatureSelect: (featureId) => selectFeature(featureId),
   })
+  viewerSnapshotKey = activeSnapshotKey()
   document.querySelector('#reset-camera')?.addEventListener('click', () => bracketViewer?.resetCamera())
   bracketViewer.setFindings(workflowState.findings)
   bracketViewer.selectFeature(workflowState.selectedFeatureId)
@@ -670,9 +697,9 @@ function bindManualToolControls() {
               proposedRadiusMm: 3.5,
             }
           : toolName === 'prepare_quote_comparison'
-            ? { quantity: DESIGN_FIXTURE.quantity }
+            ? { quantity: activeDesign().quantity }
           : toolName === 'generate_review_package'
-            ? { title: `${DESIGN_FIXTURE.designId}-${DESIGN_FIXTURE.revisionId} Manufacturing Review` }
+            ? { title: `${activeDesign().designId}-${activeDesign().revisionId} Manufacturing Review` }
           : {}
 
       button.disabled = true
@@ -703,6 +730,7 @@ async function renderRoute() {
   try {
     bracketViewer?.destroy()
     bracketViewer = null
+    viewerSnapshotKey = ''
     findingsSignature = ''
     app.innerHTML = render()
   } catch (error) {
@@ -726,7 +754,7 @@ async function renderRoute() {
   if (path === '/design') {
     bindBracketViewer()
     bindDesignSourceControls()
-    renderDesignSource()
+    synchronizeDesignWorkspace()
   }
   bindManualToolControls()
   bindWorkflowControls()
@@ -755,7 +783,7 @@ window.addEventListener('buildready:navigate', (event) => {
   void renderRoute()
 })
 window.addEventListener('buildready:statechange', updateDiagnostics)
-window.addEventListener('buildready:statechange', renderDesignSource)
+window.addEventListener('buildready:statechange', synchronizeDesignWorkspace)
 
 globalResetButton.addEventListener('click', () => {
   resetDemoState()
