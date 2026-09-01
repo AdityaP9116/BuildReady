@@ -83,10 +83,13 @@ class BuildTests(unittest.TestCase):
         self.assertIn("preview_radius_change", webmcp)
         self.assertIn("workflowState.inspectionStatus === 'complete'", webmcp)
         self.assertIn("enum: workflowState.findings.map", webmcp)
+        self.assertIn("load_onshape_design", webmcp)
         self.assertEqual(webmcp.count("readOnlyHint: true"), 4)
-        self.assertEqual(webmcp.count("readOnlyHint: false"), 2)
+        # preview_radius_change, generate_review_package, load_onshape_design
+        self.assertEqual(webmcp.count("readOnlyHint: false"), 3)
         self.assertEqual(webmcp.count("untrustedContentHint: false"), 4)
-        self.assertEqual(webmcp.count("untrustedContentHint: true"), 2)
+        # supplier quotes, review package, and live Onshape document text
+        self.assertEqual(webmcp.count("untrustedContentHint: true"), 3)
         self.assertNotIn("name: 'approve", webmcp)
         self.assertNotIn("name: 'commit", webmcp)
         self.assertIn("new AbortController()", webmcp)

@@ -60,7 +60,10 @@ class SubmissionPacketTests(unittest.TestCase):
         self.assertIn("## 2:34–2:48 — Close", script)
 
     def test_state_is_drafting_and_does_not_claim_completion(self) -> None:
-        state = json.loads((ROOT / ".devpost-hackathon-state.json").read_text(encoding="utf-8"))
+        state_file = ROOT / ".devpost-hackathon-state.json"
+        if not state_file.exists():
+            self.skipTest("local-only submission state file is gitignored")
+        state = json.loads(state_file.read_text(encoding="utf-8"))
         self.assertEqual(state["current_stage"], "prepare-submission")
         self.assertEqual(state["submission"]["status"], "drafting")
         self.assertEqual(state["submission"]["draft_file"], "devpost-submission.md")

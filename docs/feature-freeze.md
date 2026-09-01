@@ -34,3 +34,42 @@ Feature scope is frozen after Gate 9. Gate 10 may correct defects, improve docum
 - Screenshot and video capture guidance.
 - Deployment configuration and external verification when credentials or account access are available.
 - Bug fixes found by final validation.
+
+## Amendment 1 — optional live Onshape source (2026-08-31)
+
+This amendment deliberately reopens one item the Gate 9 freeze closed. It is
+recorded here rather than applied silently, because the submission's argument
+rests on documented scope discipline.
+
+**What changed.** The Gate 9 freeze forbade adding "an external service", and
+the execution plan listed "No live Onshape connection" as an MVP exclusion.
+Both were written to protect delivery time, not because the boundary was wrong.
+With the core workflow feature-complete and tested, one optional external design
+source is now in scope.
+
+**What was added.**
+
+- A read-only, allowlisted Onshape proxy holding credentials server-side
+  (`functions/api/onshape/design.js`, mirrored locally in `scripts/serve.py`).
+- A pure mapping from Onshape Part Studio variables onto the existing design
+  contract (`web/onshape-adapter.js`).
+- One WebMCP tool, `load_onshape_design`, registered only when the proxy is
+  reachable and only before an inspection exists.
+- A visible human control to load the live model or restore the fixture.
+
+**What did not change.** The five deterministic rules, the thresholds, the
+proposal policy, the human-only approval boundary, the supplier fixtures, and
+the review package are all untouched. Onshape supplies measurements and
+provenance; `cnc-rules.js` still decides what those measurements mean.
+
+**Why the frozen scope is still protected.**
+
+- The controlled fixture remains the default and the demonstrated judge path.
+- A deployment with no Onshape credentials behaves exactly as it did at Gate 10:
+  the control and the tool are never offered.
+- Every Onshape failure falls back to the fixture with a visible explanation.
+- No agent-callable path writes to Onshape. Write-back stays unimplemented, and
+  its recorded policy permits a new branch workspace only, after human approval.
+
+**Still frozen.** No new workflow stage, supplier, machining rule, approval
+path, or package format.

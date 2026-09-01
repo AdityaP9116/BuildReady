@@ -1,12 +1,17 @@
 import {
   DESIGN_FIXTURE,
+  activeDesign,
+  gate7Handlers,
   recordHumanDecision,
   resetDemoState,
+  restoreControlledFixture,
   selectFeature,
   selectFinding,
+  setOnshapeAvailability,
   workflowState,
   setActiveRoute,
 } from './state.js'
+import { onshapeSourceAvailable } from './onshape-client.js'
 import { mountBracketViewer } from './bracket-viewer.js'
 import {
   executeGate7Tool,
@@ -128,6 +133,18 @@ function renderDesign() {
           <li id="onboarding-package"><span>4</span><strong>Package</strong><small>JSON + Markdown</small></li>
         </ol>
         <a class="button-link" href="#agent-console-title">Start with the agent-ready tools</a>
+      </section>
+      <section class="source-card" id="source-card" aria-labelledby="source-title">
+        <div>
+          <p class="eyebrow">Design source</p>
+          <h2 id="source-title">Controlled fixture</h2>
+          <p id="source-detail">BRKT-001 revision B ships with the app so the workflow runs with no account or setup.</p>
+          <p id="source-provenance" class="source-provenance" hidden></p>
+        </div>
+        <div class="source-actions">
+          <button type="button" id="load-onshape-source" hidden>Load live Onshape model</button>
+          <button type="button" class="secondary-button" id="restore-fixture-source" hidden>Restore controlled fixture</button>
+        </div>
       </section>
       <section class="workspace-grid" aria-label="BuildReady workflow foundation">
         <section class="viewer-stage" aria-labelledby="viewer-title">
@@ -537,10 +554,66 @@ function updateDiagnostics() {
   renderProposal()
 }
 
+/**
+ * Keeps the design-source card in step with workflow state.
+ *
+ * All Onshape-derived text is written with `textContent`; external document
+ * names are untrusted content and never reach `innerHTML`.
+ */
+function renderDesignSource() {
+  const card = document.querySelector('#source-card')
+  if (!card) return
+
+  const { designSource, onshapeAvailable, inspectionStatus } = workflowState
+  const isLive = designSource.sourceId === 'onshape-live'
+  const design = activeDesign()
+
+  card.dataset.source = designSource.sourceId
+  document.querySelector('#source-title').textContent = designSource.label
+  document.querySelector('#source-detail').textContent = isLive
+    ? `${design.designId} measured live from Onshape at microversion ${designSource.provenance.microversionId.slice(0, 8)}.`
+    : 'BRKT-001 revision B ships with the app so the workflow runs with no account or setup.'
+
+  const provenance = document.querySelector('#source-provenance')
+  provenance.hidden = !isLive
+  if (isLive) {
+    provenance.textContent = `Document: ${designSource.provenance.documentName} · ${designSource.provenance.measurementCount} live measurements · retrieved ${designSource.provenance.retrievedAt}`
+  }
+
+  // Switching source discards derived evidence, so hide the control once the
+  // engineer has work that a reload would throw away.
+  const loadButton = document.querySelector('#load-onshape-source')
+  const restoreButton = document.querySelector('#restore-fixture-source')
+  loadButton.hidden = !onshapeAvailable || isLive || inspectionStatus === 'complete'
+  restoreButton.hidden = !isLive
+}
+
+function bindDesignSourceControls() {
+  document.querySelector('#load-onshape-source')?.addEventListener('click', async () => {
+    const button = document.querySelector('#load-onshape-source')
+    button.disabled = true
+    button.textContent = 'Loading from Onshape…'
+    try {
+      await gate7Handlers.load_onshape_design({}, {})
+    } catch (error) {
+      const detail = document.querySelector('#source-detail')
+      if (detail) detail.textContent = toolErrorEnvelope(error).error.message
+    } finally {
+      button.disabled = false
+      button.textContent = 'Load live Onshape model'
+    }
+  })
+
+  document.querySelector('#restore-fixture-source')?.addEventListener('click', () => {
+    restoreControlledFixture()
+    bracketViewer?.resetCamera()
+  })
+}
+
 function bindBracketViewer() {
   const canvas = document.querySelector('#bracket-canvas')
   if (!canvas) return
-  bracketViewer = mountBracketViewer(canvas, DESIGN_FIXTURE, {
+  bracketViewer = mountBracketViewer(canvas, activeDesign(), {
     onFeatureSelect: (featureId) => selectFeature(featureId),
   })
   document.querySelector('#reset-camera')?.addEventListener('click', () => bracketViewer?.resetCamera())
@@ -650,7 +723,11 @@ async function renderRoute() {
   })
 
   setActiveRoute(path)
-  if (path === '/design') bindBracketViewer()
+  if (path === '/design') {
+    bindBracketViewer()
+    bindDesignSourceControls()
+    renderDesignSource()
+  }
   bindManualToolControls()
   bindWorkflowControls()
   updateDiagnostics()
@@ -678,6 +755,7 @@ window.addEventListener('buildready:navigate', (event) => {
   void renderRoute()
 })
 window.addEventListener('buildready:statechange', updateDiagnostics)
+window.addEventListener('buildready:statechange', renderDesignSource)
 
 globalResetButton.addEventListener('click', () => {
   resetDemoState()
@@ -686,3 +764,7 @@ globalResetButton.addEventListener('click', () => {
 })
 
 void renderRoute()
+
+// Probed once, after first paint. A deployment without Onshape credentials
+// simply never offers the control, and the controlled fixture path is unaffected.
+void onshapeSourceAvailable().then(setOnshapeAvailability)

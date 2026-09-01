@@ -1,0 +1,209 @@
+{
+  "note": "Recorded shape of an Onshape Part Studio feature list, reduced to the assignVariable features BuildReady reads. Values reproduce the BRKT-001 revision B defect set.",
+  "serializationVersion": "1.2.7",
+  "microversionId": "a1b2c3d4e5f60718293a4b5c",
+  "features": [
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "FhKq0aPnVjLqZ1x",
+      "featureType": "assignVariable",
+      "name": "Variable insideRadius",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "insideRadius" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "1 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fpq83MnCkWrTy4z",
+      "featureType": "assignVariable",
+      "name": "Variable cutterRadius",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "cutterRadius" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "3 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fzt19XbQmLdRs7v",
+      "featureType": "assignVariable",
+      "name": "Variable pocketDepth",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "pocketDepth" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "24 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fbn47HcVpKwEu2m",
+      "featureType": "assignVariable",
+      "name": "Variable pocketMinWidth",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "pocketMinWidth" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "6 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fgd62LsYnQtJi9k",
+      "featureType": "assignVariable",
+      "name": "Variable wallThickness",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "wallThickness" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "0.8 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fwr05TjBxMzOp3q",
+      "featureType": "assignVariable",
+      "name": "Variable holeDepth",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "holeDepth" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "30 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fyc38RkDvNhAl6u",
+      "featureType": "assignVariable",
+      "name": "Variable holeDiameter",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "holeDiameter" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "5 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fkm71WqZgPbXc4d",
+      "featureType": "assignVariable",
+      "name": "Variable mountingHoleDiameter",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "mountingHoleDiameter" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "8 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fhs94VnLtCyKr8e",
+      "featureType": "assignVariable",
+      "name": "Variable mountingTolerance",
+      "parameters": [
+        {
+          "btType": "BTMParameterArray-2025",
+          "parameterId": "variables",
+          "items": [
+            {
+              "btType": "BTMArrayParameterItem-1843",
+              "parameters": [
+                { "btType": "BTMParameterString-149", "parameterId": "name", "value": "mountingTolerance" },
+                { "btType": "BTMParameterQuantity-147", "parameterId": "value", "expression": "0.02 mm" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "btType": "BTMFeature-134",
+      "featureId": "Fex52QmNbJdWt1p",
+      "featureType": "extrude",
+      "name": "Extrude 1",
+      "parameters": [
+        {
+          "btType": "BTMParameterEnum-145",
+          "parameterId": "bodyType",
+          "value": "SOLID"
+        }
+      ]
+    }
+  ]
+}

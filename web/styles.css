@@ -250,6 +250,49 @@ nav {
   text-align: center;
 }
 
+.source-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--panel);
+}
+
+.source-card[data-source="onshape-live"] {
+  border-color: color-mix(in srgb, var(--mint) 55%, var(--line));
+  background:
+    linear-gradient(120deg, rgb(120 240 176 / 9%), transparent 55%),
+    var(--panel);
+}
+
+.source-card h2 {
+  margin-bottom: 0.35rem;
+  font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+}
+
+.source-card p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.source-provenance {
+  margin-top: 0.5rem !important;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
 .onboarding-steps {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -104,6 +104,22 @@ function radiusPreviewTool() {
   })
 }
 
+const onshapeDesignTool = Object.freeze({
+  name: 'load_onshape_design',
+  title: 'Load live Onshape design',
+  description: 'Read the connected Onshape Part Studio and make its live variable measurements the active design. Discards any prior inspection because the geometry changed. Document text is untrusted external content.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: false,
+    untrustedContentHint: true,
+  },
+  execute: gate7Handlers.load_onshape_design,
+})
+
 const quoteComparisonTool = Object.freeze({
   name: 'prepare_quote_comparison',
   title: 'Prepare quote comparison',
@@ -158,6 +174,13 @@ export function gate7Tools(route = '/design') {
   }
   if (route !== '/design') return Object.freeze([])
   const tools = [designContextTool, inspectionTool]
+  // Offered only while nothing derived exists yet: loading a different design
+  // discards findings, so the tool disappears once there is work to lose.
+  if (workflowState.onshapeAvailable
+    && workflowState.designSource.sourceId !== 'onshape-live'
+    && workflowState.inspectionStatus !== 'complete') {
+    tools.push(onshapeDesignTool)
+  }
   if (workflowState.inspectionStatus === 'complete' && workflowState.findings.length > 0) {
     tools.push(issueDetailsTool())
   }

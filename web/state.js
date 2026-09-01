@@ -1,15 +1,29 @@
 import { DESIGN_FIXTURE, RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js'
 import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rules.js'
-import { revisionPrecondition, validateRadiusProposal } from './workflow-rules.js'
+import { revisionPrecondition, validateRadiusProposal, WorkflowRuleError } from './workflow-rules.js'
 import { prepareQuoteComparison } from './quote-engine.js'
 import { createReviewPackage } from './review-package.js'
 import { attachToolErrorContract } from './error-contract.js'
 
 export { DESIGN_FIXTURE }
 
+/**
+ * The controlled fixture is the default design source. A live Onshape document
+ * can replace it at runtime, but only through `setActiveDesign`, which resets
+ * every derived record so findings can never outlive the geometry they measured.
+ */
+let activeDesignSource = DESIGN_FIXTURE
+
+/** @returns {import('./domain.js').DesignFixture} the design the whole workflow measures. */
+export function activeDesign() {
+  return activeDesignSource
+}
+
 export const workflowState = {
   activeRoute: '/design',
   designContext: DESIGN_FIXTURE,
+  designSource: { sourceId: 'controlled-fixture', label: 'Controlled fixture', provenance: null },
+  onshapeAvailable: false,
   selectedFeatureId: DESIGN_FIXTURE.features.find((feature) => feature.selected)?.featureId ?? null,
   inspectionStatus: 'not_run',
   inspection: null,
@@ -85,13 +99,13 @@ function assertEmptyObject(input) {
 }
 
 function selectedFeature() {
-  return DESIGN_FIXTURE.features.find(
+  return activeDesign().features.find(
     (feature) => feature.featureId === workflowState.selectedFeatureId,
   )
 }
 
 export function selectFeature(featureId) {
-  const feature = DESIGN_FIXTURE.features.find((candidate) => candidate.featureId === featureId)
+  const feature = activeDesign().features.find((candidate) => candidate.featureId === featureId)
   if (!feature) return false
   workflowState.selectedFeatureId = featureId
   workflowState.selectedFindingId = workflowState.findings.find(
@@ -112,16 +126,16 @@ export function selectFinding(findingId) {
 
 export function activeDesignContext() {
   return {
-    designId: DESIGN_FIXTURE.designId,
-    revisionId: DESIGN_FIXTURE.revisionId,
-    fixtureVersion: DESIGN_FIXTURE.fixtureVersion,
-    name: DESIGN_FIXTURE.name,
-    material: DESIGN_FIXTURE.material,
-    process: DESIGN_FIXTURE.process,
-    quantity: DESIGN_FIXTURE.quantity,
-    units: DESIGN_FIXTURE.units,
+    designId: activeDesign().designId,
+    revisionId: activeDesign().revisionId,
+    fixtureVersion: activeDesign().fixtureVersion,
+    name: activeDesign().name,
+    material: activeDesign().material,
+    process: activeDesign().process,
+    quantity: activeDesign().quantity,
+    units: activeDesign().units,
     selectedFeature: selectedFeature(),
-    featureCount: DESIGN_FIXTURE.features.length,
+    featureCount: activeDesign().features.length,
     unsavedPreview: false,
     inspectionStatus: workflowState.inspectionStatus,
     ruleSetVersion: RULE_SET_VERSION,
@@ -151,7 +165,7 @@ async function inspectCncManufacturability(input, { signal } = {}) {
     throw new WorkflowRuleError('INVALID_INPUT', 'severity must be all, high, or medium.')
   }
 
-  const inspection = evaluateCncManufacturability(DESIGN_FIXTURE, { severity })
+  const inspection = evaluateCncManufacturability(activeDesign(), { severity })
   abortIfRequested(signal)
 
   const generatedAt = new Date().toISOString()
@@ -179,7 +193,7 @@ async function getIssueDetails(input, { signal } = {}) {
   if (workflowState.inspectionStatus !== 'complete' || !workflowState.inspection) {
     throw new WorkflowRuleError('INSPECTION_REQUIRED', 'run inspect_cnc_manufacturability first.')
   }
-  if (workflowState.inspection.revisionPrecondition !== revisionPrecondition(DESIGN_FIXTURE)) {
+  if (workflowState.inspection.revisionPrecondition !== revisionPrecondition(activeDesign())) {
     throw new WorkflowRuleError('STALE_INSPECTION', 're-run inspection for the active revision.', true)
   }
 
@@ -187,7 +201,7 @@ async function getIssueDetails(input, { signal } = {}) {
   if (!finding) {
     throw new WorkflowRuleError('FINDING_NOT_FOUND', 'choose a finding from the current inspection.')
   }
-  const feature = DESIGN_FIXTURE.features.find((candidate) => candidate.featureId === finding.featureId)
+  const feature = activeDesign().features.find((candidate) => candidate.featureId === finding.featureId)
   selectFinding(finding.findingId)
   abortIfRequested(signal)
 
@@ -228,7 +242,7 @@ async function previewRadiusChange(input, { signal } = {}) {
   }
 
   const proposal = validateRadiusProposal({
-    fixture: DESIGN_FIXTURE,
+    fixture: activeDesign(),
     inspection: workflowState.inspection,
     findings: workflowState.findings,
     existingProposal: workflowState.proposedChange,
@@ -267,7 +281,7 @@ async function prepareSupplierQuotes(input, { signal } = {}) {
   }
 
   const comparison = prepareQuoteComparison({
-    fixture: DESIGN_FIXTURE,
+    fixture: activeDesign(),
     proposal: workflowState.proposedChange,
     decisionRecord: workflowState.decisionRecord,
     quantity: input.quantity,
@@ -320,7 +334,7 @@ async function generateReviewPackage(input, { signal } = {}) {
   }
 
   const reviewPackage = createReviewPackage({
-    fixture: DESIGN_FIXTURE,
+    fixture: activeDesign(),
     inspection: workflowState.inspection,
     findings: workflowState.findings,
     proposal: workflowState.proposedChange,
@@ -358,7 +372,7 @@ async function generateReviewPackage(input, { signal } = {}) {
 export function recordHumanDecision(decision) {
   if (!['approved', 'rejected'].includes(decision)) return false
   if (!workflowState.proposedChange || workflowState.decisionStatus !== 'pending') return false
-  if (workflowState.proposedChange.revisionPrecondition !== revisionPrecondition(DESIGN_FIXTURE)) {
+  if (workflowState.proposedChange.revisionPrecondition !== revisionPrecondition(activeDesign())) {
     workflowState.proposedChange = { ...workflowState.proposedChange, status: 'stale' }
     workflowState.decisionStatus = 'stale'
     emitStateChange()
@@ -372,7 +386,7 @@ export function recordHumanDecision(decision) {
     proposalId: workflowState.proposedChange.proposalId,
     decision,
     actor: 'human',
-    revisionPrecondition: revisionPrecondition(DESIGN_FIXTURE),
+    revisionPrecondition: revisionPrecondition(activeDesign()),
     timestamp,
   }
   workflowState.decisionStatus = decision
@@ -389,7 +403,7 @@ export function recordHumanDecision(decision) {
 }
 
 export function resetDemoState() {
-  workflowState.selectedFeatureId = DESIGN_FIXTURE.features.find((feature) => feature.selected)?.featureId ?? null
+  workflowState.selectedFeatureId = activeDesign().features.find((feature) => feature.selected)?.featureId ?? null
   workflowState.inspectionStatus = 'not_run'
   workflowState.inspection = null
   workflowState.findings = []
@@ -406,6 +420,73 @@ export function resetDemoState() {
   eventSequence = 0
   emitStateChange()
   requestToolAvailabilityRefresh()
+}
+
+/**
+ * Swaps the design the entire workflow measures.
+ *
+ * Every derived record is discarded first: an inspection, proposal, decision,
+ * quote, or package produced against different geometry must never survive a
+ * source change. Restoring the controlled fixture uses the same path.
+ */
+export function setActiveDesign(design, sourceDescriptor) {
+  activeDesignSource = design
+  workflowState.designContext = design
+  resetDemoState()
+  workflowState.designSource = sourceDescriptor
+  appendAuditEvent(
+    sourceDescriptor.actor ?? 'human',
+    'set_design_source',
+    'completed',
+    `Active design source is now ${sourceDescriptor.label} (${design.designId}/${design.revisionId}).`,
+  )
+  emitStateChange()
+  return true
+}
+
+/** Records whether this deployment has a reachable Onshape proxy. */
+export function setOnshapeAvailability(available) {
+  if (workflowState.onshapeAvailable === available) return
+  workflowState.onshapeAvailable = available
+  emitStateChange()
+  requestToolAvailabilityRefresh()
+}
+
+export function restoreControlledFixture() {
+  return setActiveDesign(DESIGN_FIXTURE, {
+    sourceId: 'controlled-fixture',
+    label: 'Controlled fixture',
+    provenance: null,
+  })
+}
+
+async function loadOnshapeDesign(input, { signal } = {}) {
+  abortIfRequested(signal)
+  assertEmptyObject(input)
+
+  const { fetchOnshapeDesign } = await import('./onshape-client.js')
+  const { design, provenance } = await fetchOnshapeDesign(signal)
+  abortIfRequested(signal)
+
+  setActiveDesign(design, {
+    sourceId: provenance.sourceId,
+    label: 'Onshape live document',
+    provenance,
+    actor: 'agent_or_manual_test',
+  })
+
+  return {
+    ok: true,
+    source: 'onshape-live',
+    designId: design.designId,
+    revisionId: design.revisionId,
+    documentName: provenance.documentName,
+    microversionId: provenance.microversionId,
+    measurementCount: provenance.measurementCount,
+    retrievedAt: provenance.retrievedAt,
+    note: 'Measurements are read live from Onshape. Document text is untrusted external content.',
+    nextAction: 'Run inspect_cnc_manufacturability to evaluate the live model against the CNC rules.',
+  }
 }
 
 function audited(toolName, summary, handler) {
@@ -449,6 +530,11 @@ export const gate7Handlers = Object.freeze({
     'prepare_quote_comparison',
     'Prepared two normalized fictional supplier quotes for the human-reviewed configuration.',
     prepareSupplierQuotes,
+  ),
+  load_onshape_design: audited(
+    'load_onshape_design',
+    'Read live variable measurements from the connected Onshape Part Studio.',
+    loadOnshapeDesign,
   ),
   generate_review_package: audited(
     'generate_review_package',
