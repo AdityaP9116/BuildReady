@@ -34,6 +34,10 @@ class ReviewPackageContractTests(unittest.TestCase):
             "disclaimer",
             "versions",
             "revisionPrecondition",
+            "snapshotKey",
+            "packageSource",
+            "microversionId",
+            "measurementCount",
             "evidenceReferences",
             "supplierComparison",
             "configurationHash",
@@ -41,6 +45,18 @@ class ReviewPackageContractTests(unittest.TestCase):
         ):
             self.assertIn(field, self.review)
         self.assertIn("not production approval", self.review)
+        self.assertIn("REVIEW_PACKAGE_SCHEMA_VERSION = '1.1.0'", self.review)
+        self.assertIn("designSnapshot: fixture.fixtureVersion", self.review)
+        self.assertNotIn("designFixture: fixture.fixtureVersion", self.review)
+        self.assertIn("function markdownText", self.review)
+
+    def test_live_evidence_uses_onshape_revision_provenance(self) -> None:
+        adapter = (ROOT / "web" / "onshape-adapter.js").read_text(encoding="utf-8")
+        rules = (ROOT / "web" / "cnc-rules.js").read_text(encoding="utf-8")
+        self.assertIn("onshape://documents/", adapter)
+        self.assertIn("feature.evidenceReference ?? rule.evidenceReferences[0]", rules)
+        self.assertIn("source: activeDesignSource()", self.state)
+        self.assertIn("snapshotKey: activeSnapshotKey()", self.state)
 
     def test_review_tool_is_conditional_and_compact(self) -> None:
         self.assertIn("name: 'generate_review_package'", self.webmcp)

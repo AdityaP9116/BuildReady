@@ -82,7 +82,10 @@ export function evaluateRule(rule, feature, fixture) {
     consequence: rule.consequence,
     recommendation: rule.recommendation,
     confidence: 'deterministic',
-    evidenceReferences: Object.freeze([...rule.evidenceReferences]),
+    evidenceReferences: Object.freeze([
+      feature.evidenceReference ?? rule.evidenceReferences[0],
+      ...rule.evidenceReferences.slice(1),
+    ]),
     highlightIds: Object.freeze([...feature.highlightIds]),
   })
 }

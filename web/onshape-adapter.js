@@ -150,6 +150,7 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
         ...feature,
         dimensions: dimensionsByFeature.get(feature.featureId),
         revisionProvenance: provenance,
+        evidenceReference: `onshape://documents/${payload.document.documentId}/microversions/${microversion}/elements/${payload.document.elementId}/features/${feature.featureId}`,
       })),
     },
     provenance: {

@@ -9,6 +9,7 @@
  * @property {string[]} applicableRuleIds
  * @property {string[]} highlightIds
  * @property {string} revisionProvenance
+ * @property {string} [evidenceReference]
  */
 
 /** @typedef {{ designId: string, revisionId: string, fixtureVersion: string, name: string, material: {id: string, label: string}, process: {id: string, label: string}, quantity: number, units: string, features: FeatureRecord[] }} DesignFixture */

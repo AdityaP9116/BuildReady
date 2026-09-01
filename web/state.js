@@ -364,6 +364,8 @@ async function generateReviewPackage(input, { signal } = {}) {
 
   const reviewPackage = createReviewPackage({
     fixture: activeDesign(),
+    source: activeDesignSource(),
+    snapshotKey: activeSnapshotKey(),
     inspection: workflowState.inspection,
     findings: workflowState.findings,
     proposal: workflowState.proposedChange,

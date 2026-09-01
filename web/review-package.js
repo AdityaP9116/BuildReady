@@ -1,7 +1,7 @@
 import { RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js'
 import { revisionPrecondition, WorkflowRuleError } from './workflow-rules.js'
 
-export const REVIEW_PACKAGE_SCHEMA_VERSION = '1.0.0'
+export const REVIEW_PACKAGE_SCHEMA_VERSION = '1.1.0'
 export const REVIEW_DISCLAIMER = 'Controlled demonstration evidence only. This package is not production approval, a commercial quote, or manufacturing guidance.'
 
 export function normalizePackageTitle(value, fixture) {
@@ -42,7 +42,28 @@ export function validateReviewReadiness({ fixture, inspection, proposal, decisio
   return { precondition, configurationHash }
 }
 
-export function createReviewPackage({ fixture, inspection, findings, proposal, decisionRecord, supplierRequests, supplierQuotes, auditEvents, title, generatedAt }) {
+function packageSource(source) {
+  if (source.sourceId !== 'onshape-live') {
+    return Object.freeze({ sourceId: source.sourceId, label: source.label, provenance: null })
+  }
+  const provenance = source.provenance
+  return Object.freeze({
+    sourceId: source.sourceId,
+    label: source.label,
+    provenance: Object.freeze({
+      documentId: provenance.documentId,
+      workspaceId: provenance.workspaceId,
+      elementId: provenance.elementId,
+      documentName: provenance.documentName,
+      documentHref: provenance.documentHref,
+      microversionId: provenance.microversionId,
+      retrievedAt: provenance.retrievedAt,
+      measurementCount: provenance.measurementCount,
+    }),
+  })
+}
+
+export function createReviewPackage({ fixture, source, snapshotKey, inspection, findings, proposal, decisionRecord, supplierRequests, supplierQuotes, auditEvents, title, generatedAt }) {
   const { precondition, configurationHash } = validateReviewReadiness({
     fixture, inspection, proposal, decisionRecord, supplierRequests, supplierQuotes,
   })
@@ -56,7 +77,7 @@ export function createReviewPackage({ fixture, inspection, findings, proposal, d
     generatedAt,
     disclaimer: REVIEW_DISCLAIMER,
     versions: Object.freeze({
-      designFixture: fixture.fixtureVersion,
+      designSnapshot: fixture.fixtureVersion,
       cncRuleSet: RULE_SET_VERSION,
       supplierFixture: '1.0.0',
       reviewPackage: REVIEW_PACKAGE_SCHEMA_VERSION,
@@ -65,11 +86,19 @@ export function createReviewPackage({ fixture, inspection, findings, proposal, d
       designId: fixture.designId,
       revisionId: fixture.revisionId,
       revisionPrecondition: precondition,
+      snapshotKey,
+      source: packageSource(source),
       name: fixture.name,
       material: fixture.material,
       process: fixture.process,
       quantity: supplierRequests[0].quantity,
       units: fixture.units,
+      features: fixture.features.map((feature) => Object.freeze({
+        featureId: feature.featureId,
+        dimensions: Object.freeze({ ...feature.dimensions }),
+        revisionProvenance: feature.revisionProvenance,
+        evidenceReference: feature.evidenceReference ?? null,
+      })),
     }),
     inspection: Object.freeze({
       inspectionId: inspection.inspectionId,
@@ -96,6 +125,14 @@ function money(value, currency) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value)
 }
 
+function markdownText(value) {
+  return String(value)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/([\\`*_[\]{}<>|])/g, '\\$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function serializeReviewPackageMarkdown(reviewPackage) {
   const findingRows = reviewPackage.inspection.findings
     .map((finding) => `| ${finding.ruleId} | ${finding.severity} | ${finding.featureId} | ${finding.calculation} |`)
@@ -111,6 +148,13 @@ export function serializeReviewPackageMarkdown(reviewPackage) {
   const auditRows = reviewPackage.auditTrail
     .map((event) => `- ${event.timestamp} — ${event.actor}: ${event.toolName} (${event.status})`)
     .join('\n')
+  const source = reviewPackage.design.source
+  const sourceLines = source.sourceId === 'onshape-live'
+    ? `- Source: ${markdownText(source.label)}
+- Onshape document: ${markdownText(source.provenance.documentName)}
+- Microversion: ${markdownText(source.provenance.microversionId)}
+- Retrieved: ${markdownText(source.provenance.retrievedAt)}`
+    : `- Source: ${markdownText(source.label)}`
 
   return `# ${reviewPackage.title}
 
@@ -119,6 +163,8 @@ export function serializeReviewPackageMarkdown(reviewPackage) {
 ## Design
 
 - Design: ${reviewPackage.design.designId} revision ${reviewPackage.design.revisionId}
+- Snapshot: ${reviewPackage.design.snapshotKey}
+${sourceLines}
 - Configuration: ${reviewPackage.supplierComparison.configurationHash}
 - Material: ${reviewPackage.design.material.label}
 - Process: ${reviewPackage.design.process.label}
