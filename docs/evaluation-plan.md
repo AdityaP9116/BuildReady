@@ -12,6 +12,9 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
+The source check invokes a zero-package Node test for the deployed Cloudflare
+Function. No npm install or dependency directory is required.
+
 The suite verifies fixture determinism, boundary values, schema restrictions, output budgets, security headers, route-scoped registration, cleanup through `AbortController`, review completeness, download parity, and the absence of dangerous DOM authority shortcuts.
 
 ## Browser golden path

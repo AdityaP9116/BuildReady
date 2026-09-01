@@ -12,9 +12,11 @@ import json
 import os
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import scripts.serve as serve
 
@@ -110,7 +112,9 @@ class OnshapeProxyTests(unittest.TestCase):
 
         # The proxy caches successful reads; every test starts cold.
         serve._cache.clear()
+        serve._inflight.clear()
         self.addCleanup(serve._cache.clear)
+        self.addCleanup(serve._inflight.clear)
 
         # Keep retry backoff from dominating the suite runtime.
         self._saved_backoff = serve.BACKOFF_BASE_SECONDS
@@ -139,7 +143,7 @@ class OnshapeProxyTests(unittest.TestCase):
         self.assertEqual("ONSHAPE_UNAUTHORIZED", payload["error"]["code"])
         self.assertFalse(payload["error"]["retryable"])
         # A rejected credential will never succeed; retrying only burns quota.
-        self.assertEqual(1, self.mock.request_count)
+        self.assertEqual(2, self.mock.request_count)
 
     def test_missing_element_fails_fast(self) -> None:
         self.mock.mode = "notfound"
@@ -147,7 +151,7 @@ class OnshapeProxyTests(unittest.TestCase):
         status, payload = serve.local_onshape_payload()
         self.assertEqual(502, status)
         self.assertEqual("ONSHAPE_NOT_FOUND", payload["error"]["code"])
-        self.assertEqual(1, self.mock.request_count)
+        self.assertEqual(2, self.mock.request_count)
 
     def test_non_json_body_is_retried_then_reported(self) -> None:
         self.mock.mode = "garbage"
@@ -155,7 +159,7 @@ class OnshapeProxyTests(unittest.TestCase):
         status, payload = serve.local_onshape_payload()
         self.assertEqual(502, status)
         self.assertEqual("ONSHAPE_UNAVAILABLE", payload["error"]["code"])
-        self.assertEqual(serve.MAX_ATTEMPTS, self.mock.request_count)
+        self.assertEqual(serve.MAX_ATTEMPTS * 2, self.mock.request_count)
 
     def test_model_without_variables_is_reported_distinctly(self) -> None:
         self.mock.mode = "empty"
@@ -178,9 +182,12 @@ class OnshapeProxyTests(unittest.TestCase):
     def test_rate_limiting_is_retried_and_honours_retry_after(self) -> None:
         self.mock.mode = "ratelimited"
         self.mock.request_count = 0
-        status, _ = serve.local_onshape_payload()
+        with mock.patch("scripts.serve.time.sleep") as sleep:
+            status, _ = serve.local_onshape_payload()
         self.assertEqual(502, status)
-        self.assertEqual(serve.MAX_ATTEMPTS, self.mock.request_count)
+        self.assertEqual(serve.MAX_ATTEMPTS * 2, self.mock.request_count)
+        self.assertTrue(sleep.call_args_list)
+        self.assertTrue(all(call.args == (1.0,) for call in sleep.call_args_list))
 
     def test_successful_reads_are_cached_so_agents_cannot_exhaust_quota(self) -> None:
         serve.local_onshape_payload()
@@ -197,6 +204,43 @@ class OnshapeProxyTests(unittest.TestCase):
         self.assertEqual(503, status)
         self.assertEqual("ONSHAPE_NOT_CONFIGURED", payload["error"]["code"])
         self.assertEqual(0, self.mock.request_count)
+
+    def test_malformed_identifier_never_reaches_the_network(self) -> None:
+        os.environ["ONSHAPE_ELEMENT_ID"] = "../../caller-controlled"
+        self.mock.request_count = 0
+        status, payload = serve.local_onshape_payload()
+        self.assertEqual(503, status)
+        self.assertEqual("ONSHAPE_NOT_CONFIGURED", payload["error"]["code"])
+        self.assertFalse(payload["error"]["retryable"])
+        self.assertEqual(0, self.mock.request_count)
+
+    def test_cache_is_scoped_to_the_configured_document(self) -> None:
+        serve.local_onshape_payload()
+        first_count = self.mock.request_count
+        os.environ["ONSHAPE_ELEMENT_ID"] = "000000000000000000000009"
+        status, payload = serve.local_onshape_payload()
+        self.assertEqual(200, status)
+        self.assertEqual("000000000000000000000009", payload["document"]["elementId"])
+        self.assertEqual(first_count + 2, self.mock.request_count)
+
+    def test_concurrent_callers_share_one_upstream_read(self) -> None:
+        self.mock.request_count = 0
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(lambda _: serve.local_onshape_payload(), range(5)))
+        self.assertTrue(all(status == 200 for status, _ in results))
+        self.assertEqual(2, self.mock.request_count)
+
+    def test_variable_walk_is_depth_bounded(self) -> None:
+        shallow = {"parameters": [
+            {"parameterId": "name", "value": "insideRadius"},
+            {"parameterId": "value", "expression": "4 mm"},
+        ]}
+        node: dict[str, Any] = shallow
+        for _ in range(serve.MAX_DEPTH + 2):
+            node = {"child": node}
+        found: list[dict[str, str]] = []
+        serve.collect_variables(node, found)
+        self.assertEqual([], found)
 
     def test_untrusted_document_name_is_passed_through_bounded_not_executed(self) -> None:
         _, payload = serve.local_onshape_payload()

@@ -68,6 +68,10 @@ uv run python -m unittest discover -s tests -v
 uv run python scripts/build.py
 ```
 
+`scripts/check.py` also runs the production Cloudflare Function contract with
+Node's built-in test runner. It installs no npm packages; `uv` remains the
+single project command entry point.
+
 ## Gate 10 WebMCP tools
 
 | Tool | Availability | Behavior |
@@ -187,6 +191,7 @@ uv run python scripts/mock_onshape.py           # add --fail <mode> to test degr
 # With your own account: see what BuildReady can read from your CAD
 uv run python scripts/onshape_probe.py documents
 uv run python scripts/onshape_probe.py inspect <onshape-url>
+uv run --env-file .env python scripts/serve.py
 ```
 
 Configure with the variables in `.env.example` (Cloudflare secrets in production).

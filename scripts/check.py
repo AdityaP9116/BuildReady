@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECKED_SUFFIXES = {".css", ".html", ".js", ".json", ".md", ".py", ".toml", ".yml"}
+CHECKED_SUFFIXES = {".css", ".html", ".js", ".json", ".md", ".mjs", ".py", ".toml", ".yml"}
 IGNORED_PARTS = {".git", ".venv", "dist", "node_modules"}
 IGNORED_FILES = {".devpost-hackathon-state.json"}
 
@@ -50,6 +51,11 @@ def main() -> None:
         raise SystemExit("\n".join(problems))
 
     print(f"Checked {len(checked_files())} project files")
+    subprocess.run(
+        ["node", "--test", str(ROOT / "tests" / "js" / "onshape-function-contract.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 if __name__ == "__main__":

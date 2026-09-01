@@ -40,8 +40,8 @@ const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504])
  * chatty agent from exhausting the quota, and coalescing means concurrent
  * viewers share one upstream call instead of racing.
  */
-let cachedResponse = null
-let inFlight = null
+const cachedResponses = new Map()
+const inFlightReads = new Map()
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -56,8 +56,8 @@ function jsonResponse(body, status = 200) {
   })
 }
 
-function failure(code, message, status) {
-  return jsonResponse({ ok: false, error: { code, message, retryable: status >= 500 } }, status)
+function failure(code, message, status, retryable = false) {
+  return jsonResponse({ ok: false, error: { code, message, retryable } }, status)
 }
 
 /**
@@ -122,12 +122,16 @@ async function onshapeGet(path, env) {
       if (response.ok) {
         const declaredLength = Number(response.headers.get('content-length') ?? 0)
         if (declaredLength > MAX_RESPONSE_BYTES) {
-          throw Object.assign(new Error('Onshape response too large'), { status: 413, fatal: true })
+          throw Object.assign(new Error('The Onshape response exceeded the configured size limit.'), {
+            code: 'ONSHAPE_RESPONSE_TOO_LARGE', httpStatus: 502, retryable: false, fatal: true,
+          })
         }
 
         const text = await response.text()
         if (text.length > MAX_RESPONSE_BYTES) {
-          throw Object.assign(new Error('Onshape response too large'), { status: 413, fatal: true })
+          throw Object.assign(new Error('The Onshape response exceeded the configured size limit.'), {
+            code: 'ONSHAPE_RESPONSE_TOO_LARGE', httpStatus: 502, retryable: false, fatal: true,
+          })
         }
         try {
           return JSON.parse(text)
@@ -181,24 +185,33 @@ export async function onRequestGet({ env }) {
   if (![documentId, workspaceId, elementId].every((id) => ID_PATTERN.test(id))) {
     return failure('ONSHAPE_NOT_CONFIGURED', 'The configured Onshape identifiers are malformed.', 503)
   }
+  const cacheKey = [env.ONSHAPE_BASE_URL || DEFAULT_BASE_URL, documentId, workspaceId, elementId].join('|')
 
+  const cachedResponse = cachedResponses.get(cacheKey)
   if (cachedResponse && Date.now() - cachedResponse.storedAt < CACHE_TTL_MS) {
     return jsonResponse({ ...cachedResponse.payload, cached: true })
   }
 
   // Concurrent callers share one upstream read rather than racing it.
-  inFlight ??= readDesign(env, documentId, workspaceId, elementId).finally(() => {
-    inFlight = null
-  })
+  if (!inFlightReads.has(cacheKey)) {
+    inFlightReads.set(
+      cacheKey,
+      readDesign(env, documentId, workspaceId, elementId).finally(() => {
+        inFlightReads.delete(cacheKey)
+      }),
+    )
+  }
 
   try {
-    const payload = await inFlight
-    cachedResponse = { payload, storedAt: Date.now() }
+    const payload = await inFlightReads.get(cacheKey)
+    cachedResponses.set(cacheKey, { payload, storedAt: Date.now() })
     return jsonResponse(payload)
   } catch (error) {
-    if (error?.code) return failure(error.code, error.message, error.httpStatus ?? 502)
+    if (error?.code) {
+      return failure(error.code, error.message, error.httpStatus ?? 502, Boolean(error.retryable))
+    }
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-      return failure('ONSHAPE_TIMEOUT', 'Onshape did not respond in time.', 504)
+      return failure('ONSHAPE_TIMEOUT', 'Onshape did not respond in time.', 504, true)
     }
     if (error?.status === 401 || error?.status === 403) {
       return failure('ONSHAPE_UNAUTHORIZED', 'BuildReady is not authorized for this document.', 502)
@@ -206,7 +219,7 @@ export async function onRequestGet({ env }) {
     if (error?.status === 404) {
       return failure('ONSHAPE_NOT_FOUND', 'The configured Onshape element was not found.', 502)
     }
-    return failure('ONSHAPE_UNAVAILABLE', 'The live Onshape source is unavailable.', 502)
+    return failure('ONSHAPE_UNAVAILABLE', 'The live Onshape source is unavailable.', 502, true)
   }
 }
 
@@ -222,6 +235,7 @@ async function readDesign(env, documentId, workspaceId, elementId) {
     throw Object.assign(new Error('The configured Part Studio exposes no named variables.'), {
       code: 'ONSHAPE_NO_VARIABLES',
       httpStatus: 502,
+      retryable: false,
     })
   }
 

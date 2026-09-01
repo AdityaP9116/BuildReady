@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
 import json
 import os
+import re
+import socket
 import threading
 import time
 import urllib.error
@@ -37,22 +40,43 @@ ONSHAPE_REQUIRED_ENV = (
 
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_VARIABLES = 40
+MAX_NAME_LENGTH = 64
+MAX_DEPTH = 12
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 0.25
 CACHE_TTL_SECONDS = 15
 RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
+ID_PATTERN = re.compile(r"^[A-Za-z0-9]{8,40}$")
 
-_cache: dict[str, Any] = {}
+_cache: dict[str, dict[str, Any]] = {}
+_inflight: dict[str, threading.Event] = {}
 _cache_lock = threading.Lock()
 
 
 class FatalOnshapeError(RuntimeError):
     """An upstream condition no retry can fix."""
 
-    def __init__(self, code: str, status: int) -> None:
-        super().__init__(code)
+    def __init__(self, code: str, message: str, status: int, retryable: bool = False) -> None:
+        super().__init__(message)
         self.code = code
+        self.message = message
         self.status = status
+        self.retryable = retryable
+
+
+def failure(code: str, message: str, status: int, retryable: bool = False) -> tuple[int, dict[str, Any]]:
+    return status, {
+        "ok": False,
+        "error": {"code": code, "message": message, "retryable": retryable},
+    }
+
+
+def release_inflight(cache_key: str) -> None:
+    with _cache_lock:
+        event = _inflight.pop(cache_key, None)
+        if event:
+            event.set()
 
 
 def onshape_get(path: str) -> dict[str, Any]:
@@ -71,29 +95,63 @@ def onshape_get(path: str) -> dict[str, Any]:
 
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        retry_after_seconds: float | None = None
         try:
             with urllib.request.urlopen(request, timeout=8) as response:
                 body = response.read(MAX_RESPONSE_BYTES + 1)
                 if len(body) > MAX_RESPONSE_BYTES:
-                    raise FatalOnshapeError("ONSHAPE_RESPONSE_TOO_LARGE", 502)
+                    raise FatalOnshapeError(
+                        "ONSHAPE_RESPONSE_TOO_LARGE",
+                        "The Onshape response exceeded the configured size limit.",
+                        502,
+                    )
                 return json.loads(body.decode("utf-8"))
         except FatalOnshapeError:
             raise
         except urllib.error.HTTPError as error:
             if error.code in (401, 403):
-                raise FatalOnshapeError("ONSHAPE_UNAUTHORIZED", 502) from error
+                error.close()
+                raise FatalOnshapeError(
+                    "ONSHAPE_UNAUTHORIZED",
+                    "BuildReady is not authorized for this document.",
+                    502,
+                ) from error
             if error.code == 404:
-                raise FatalOnshapeError("ONSHAPE_NOT_FOUND", 502) from error
+                error.close()
+                raise FatalOnshapeError(
+                    "ONSHAPE_NOT_FOUND",
+                    "The configured Onshape element was not found.",
+                    502,
+                ) from error
             if error.code not in RETRYABLE_STATUS:
-                raise FatalOnshapeError("ONSHAPE_UNAVAILABLE", 502) from error
+                error.close()
+                raise FatalOnshapeError(
+                    "ONSHAPE_UNAVAILABLE",
+                    "The live Onshape source is unavailable.",
+                    502,
+                ) from error
+            if error.code == 429:
+                try:
+                    declared_retry = float(error.headers.get("Retry-After", ""))
+                    if 0 < declared_retry <= 5:
+                        retry_after_seconds = declared_retry
+                except (TypeError, ValueError):
+                    retry_after_seconds = None
+            error.close()
             last_error = error
-        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as error:
+        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError, socket.timeout) as error:
             last_error = error
 
         if attempt < MAX_ATTEMPTS:
-            time.sleep(BACKOFF_BASE_SECONDS * 2 ** (attempt - 1))
+            time.sleep(retry_after_seconds or BACKOFF_BASE_SECONDS * 2 ** (attempt - 1))
 
-    raise last_error or RuntimeError("Onshape request failed")
+    if isinstance(last_error, (TimeoutError, socket.timeout)):
+        raise FatalOnshapeError(
+            "ONSHAPE_TIMEOUT", "Onshape did not respond in time.", 504, True
+        ) from last_error
+    raise FatalOnshapeError(
+        "ONSHAPE_UNAVAILABLE", "The live Onshape source is unavailable.", 502, True
+    ) from last_error
 
 
 def local_onshape_payload() -> tuple[int, dict[str, Any]]:
@@ -103,60 +161,65 @@ def local_onshape_payload() -> tuple[int, dict[str, Any]]:
     level; production always serves this endpoint from the Cloudflare function.
     """
     if any(name not in os.environ for name in ONSHAPE_REQUIRED_ENV):
-        return 503, {
-            "ok": False,
-            "error": {
-                "code": "ONSHAPE_NOT_CONFIGURED",
-                "message": "The live Onshape source is not configured.",
-                "retryable": False,
-            },
-        }
+        return failure(
+            "ONSHAPE_NOT_CONFIGURED", "The live Onshape source is not configured.", 503
+        )
 
     document_id = os.environ["ONSHAPE_DOCUMENT_ID"]
     workspace_id = os.environ["ONSHAPE_WORKSPACE_ID"]
     element_id = os.environ["ONSHAPE_ELEMENT_ID"]
     base_url = os.environ.get("ONSHAPE_BASE_URL", "https://cad.onshape.com")
+    if not all(ID_PATTERN.fullmatch(value) for value in (document_id, workspace_id, element_id)):
+        return failure(
+            "ONSHAPE_NOT_CONFIGURED", "The configured Onshape identifiers are malformed.", 503
+        )
+    cache_key = "|".join((base_url, document_id, workspace_id, element_id))
 
     with _cache_lock:
-        cached = _cache.get("payload")
+        cached = _cache.get(cache_key)
         if cached and time.monotonic() - cached["stored_at"] < CACHE_TTL_SECONDS:
             return 200, {**cached["payload"], "cached": True}
+        wait_for = _inflight.get(cache_key)
+        if wait_for is None:
+            wait_for = threading.Event()
+            _inflight[cache_key] = wait_for
+            is_leader = True
+        else:
+            is_leader = False
+
+    if not is_leader:
+        wait_for.wait(timeout=MAX_ATTEMPTS * 8 + 6)
+        with _cache_lock:
+            cached = _cache.get(cache_key)
+            if cached and time.monotonic() - cached["stored_at"] < CACHE_TTL_SECONDS:
+                return 200, {**cached["payload"], "cached": True}
 
     try:
         scope = f"/d/{document_id}/w/{workspace_id}/e/{element_id}"
-        features = onshape_get(f"/api/v6/partstudios{scope}/features")
-        metadata = onshape_get(f"/api/v6/documents/{document_id}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            features_future = pool.submit(onshape_get, f"/api/v6/partstudios{scope}/features")
+            metadata_future = pool.submit(onshape_get, f"/api/v6/documents/{document_id}")
+            features = features_future.result()
+            metadata = metadata_future.result()
     except FatalOnshapeError as error:
-        return error.status, {
-            "ok": False,
-            "error": {
-                "code": error.code,
-                "message": "The live Onshape source could not be read.",
-                "retryable": False,
-            },
-        }
+        release_inflight(cache_key)
+        return failure(error.code, error.message, error.status, error.retryable)
     except Exception:  # noqa: BLE001 - local dev surface mirrors the proxy contract
-        return 502, {
-            "ok": False,
-            "error": {
-                "code": "ONSHAPE_UNAVAILABLE",
-                "message": "The live Onshape source is unavailable.",
-                "retryable": True,
-            },
-        }
+        release_inflight(cache_key)
+        return failure(
+            "ONSHAPE_UNAVAILABLE", "The live Onshape source is unavailable.", 502, True
+        )
 
     variables: list[dict[str, str]] = []
     collect_variables(features.get("features", features), variables)
 
     if not variables:
-        return 502, {
-            "ok": False,
-            "error": {
-                "code": "ONSHAPE_NO_VARIABLES",
-                "message": "The configured Part Studio exposes no named variables.",
-                "retryable": False,
-            },
-        }
+        release_inflight(cache_key)
+        return failure(
+            "ONSHAPE_NO_VARIABLES",
+            "The configured Part Studio exposes no named variables.",
+            502,
+        )
 
     payload = {
         "ok": True,
@@ -176,17 +239,20 @@ def local_onshape_payload() -> tuple[int, dict[str, Any]]:
     }
 
     with _cache_lock:
-        _cache["payload"] = {"payload": payload, "stored_at": time.monotonic()}
+        _cache[cache_key] = {"payload": payload, "stored_at": time.monotonic()}
+        event = _inflight.pop(cache_key, None)
+        if event:
+            event.set()
 
     return 200, payload
 
 
-def collect_variables(node: Any, found: list[dict[str, str]]) -> None:
-    if len(found) >= 40 or node is None:
+def collect_variables(node: Any, found: list[dict[str, str]], depth: int = 0) -> None:
+    if depth > MAX_DEPTH or len(found) >= MAX_VARIABLES or node is None:
         return
     if isinstance(node, list):
         for item in node:
-            collect_variables(item, found)
+            collect_variables(item, found, depth + 1)
         return
     if not isinstance(node, dict):
         return
@@ -202,12 +268,12 @@ def collect_variables(node: Any, found: list[dict[str, str]]) -> None:
                 name = parameter["value"]
             if parameter.get("parameterId") == "value" and isinstance(parameter.get("expression"), str):
                 expression = parameter["expression"]
-        if name and expression and len(name) <= 64:
-            found.append({"name": name, "expression": expression[:64]})
+        if name and expression and len(name) <= MAX_NAME_LENGTH:
+            found.append({"name": name, "expression": expression[:MAX_NAME_LENGTH]})
 
     for value in node.values():
         if isinstance(value, (dict, list)):
-            collect_variables(value, found)
+            collect_variables(value, found, depth + 1)
 
 
 class SpaRequestHandler(SimpleHTTPRequestHandler):
@@ -250,6 +316,8 @@ def main() -> None:
 
     server = ThreadingHTTPServer((args.host, args.port), SpaRequestHandler)
     print(f"BuildReady available at http://{args.host}:{args.port}")
+    configured = all(os.environ.get(name) for name in ONSHAPE_REQUIRED_ENV)
+    print(f"Onshape source: {'configured' if configured else 'not configured (fixture-only mode)'}")
 
     try:
         server.serve_forever()

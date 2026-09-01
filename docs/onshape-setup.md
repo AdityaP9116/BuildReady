@@ -127,7 +127,8 @@ ONSHAPE_WORKSPACE_ID=…
 ONSHAPE_ELEMENT_ID=…
 ```
 
-Then `uv run python scripts/serve.py` and load the live model from `/design`.
+Then run `uv run --env-file .env python scripts/serve.py` and load the live
+model from `/design`. `uv` does not load `.env` unless `--env-file` is supplied.
 
 ---
 
