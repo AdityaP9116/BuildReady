@@ -1,4 +1,4 @@
-import { gate7Handlers, setRegistrationState, workflowState } from './state.js'
+import { activeDesign, activeDesignSource, gate7Handlers, setRegistrationState, workflowState } from './state.js'
 import { PROPOSAL_POLICY } from './domain.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
@@ -9,10 +9,16 @@ import { PROPOSAL_POLICY } from './domain.js'
 /** @type {Document & { modelContext?: ModelContextApi }} */
 const webMcpDocument = document
 
-const designContextTool = Object.freeze({
+function sourceIsExternal() {
+  return activeDesignSource().sourceId === 'onshape-live'
+}
+
+function designContextTool() {
+  const design = activeDesign()
+  return Object.freeze({
   name: 'get_active_design_context',
   title: 'Get active design context',
-  description: 'Read the active controlled design fixture, revision, material, process, quantity, selected feature, preview state, inspection state, and rule-set version.',
+  description: `Read the active ${activeDesignSource().label.toLowerCase()} ${design.designId}/${design.revisionId}, material, process, quantity, selected feature, source provenance, inspection state, and rule-set version.`,
   inputSchema: {
     type: 'object',
     properties: {},
@@ -20,15 +26,18 @@ const designContextTool = Object.freeze({
   },
   annotations: {
     readOnlyHint: true,
-    untrustedContentHint: false,
+    untrustedContentHint: sourceIsExternal(),
   },
   execute: gate7Handlers.get_active_design_context,
 })
+}
 
-const inspectionTool = Object.freeze({
+function inspectionTool() {
+  const design = activeDesign()
+  return Object.freeze({
   name: 'inspect_cnc_manufacturability',
   title: 'Inspect CNC manufacturability',
-  description: 'Evaluate five deterministic CNC rules for BRKT-001 revision B. Returns severity counts, observed measurements, thresholds, stable finding IDs, and fixture evidence references.',
+  description: `Evaluate five deterministic CNC rules for ${design.designId} revision ${design.revisionId}. Returns severity counts, observed measurements, thresholds, stable finding IDs, and revision-bound evidence references.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -42,10 +51,11 @@ const inspectionTool = Object.freeze({
   },
   annotations: {
     readOnlyHint: true,
-    untrustedContentHint: false,
+    untrustedContentHint: sourceIsExternal(),
   },
   execute: gate7Handlers.inspect_cnc_manufacturability,
 })
+}
 
 function issueDetailsTool() {
   return Object.freeze({
@@ -120,6 +130,57 @@ const onshapeDesignTool = Object.freeze({
   execute: gate7Handlers.load_onshape_design,
 })
 
+const onshapeRevisionCheckTool = Object.freeze({
+  name: 'check_onshape_revision',
+  title: 'Check Onshape revision',
+  description: 'Read the connected Part Studio and compare its current microversion with the active snapshot without discarding existing evidence.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: true,
+    untrustedContentHint: true,
+  },
+  execute: gate7Handlers.check_onshape_revision,
+})
+
+function onshapeRevisionActivationTool() {
+  const candidate = workflowState.pendingDesignSnapshot
+  return Object.freeze({
+    name: 'activate_onshape_revision',
+    title: 'Activate checked Onshape revision',
+    description: 'Replace the active design with the checked Onshape revision. Any inspection, proposal, decision, quote, or review package for the previous revision is discarded.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        expectedCurrentRevisionId: {
+          type: 'string',
+          enum: [activeDesign().revisionId],
+          description: 'The revision currently active in BuildReady.',
+        },
+        candidateRevisionId: {
+          type: 'string',
+          enum: candidate ? [candidate.design.revisionId] : [],
+          description: 'The candidate returned by check_onshape_revision.',
+        },
+        discardDerivedEvidence: {
+          type: 'boolean',
+          description: 'Explicitly acknowledge that revision-bound derived evidence may be cleared.',
+        },
+      },
+      required: ['expectedCurrentRevisionId', 'candidateRevisionId', 'discardDerivedEvidence'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      untrustedContentHint: true,
+    },
+    execute: gate7Handlers.activate_onshape_revision,
+  })
+}
+
 const quoteComparisonTool = Object.freeze({
   name: 'prepare_quote_comparison',
   title: 'Prepare quote comparison',
@@ -173,13 +234,19 @@ export function gate7Tools(route = '/design') {
       : Object.freeze([])
   }
   if (route !== '/design') return Object.freeze([])
-  const tools = [designContextTool, inspectionTool]
+  const tools = [designContextTool(), inspectionTool()]
   // Offered only while nothing derived exists yet: loading a different design
   // discards findings, so the tool disappears once there is work to lose.
   if (workflowState.onshapeAvailable
     && workflowState.designSource.sourceId !== 'onshape-live'
     && workflowState.inspectionStatus !== 'complete') {
     tools.push(onshapeDesignTool)
+  }
+  if (workflowState.designSource.sourceId === 'onshape-live') {
+    tools.push(onshapeRevisionCheckTool)
+  }
+  if (workflowState.pendingDesignSnapshot) {
+    tools.push(onshapeRevisionActivationTool())
   }
   if (workflowState.inspectionStatus === 'complete' && workflowState.findings.length > 0) {
     tools.push(issueDetailsTool())

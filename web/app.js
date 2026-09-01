@@ -144,6 +144,8 @@ function renderDesign() {
         </div>
         <div class="source-actions">
           <button type="button" id="load-onshape-source" hidden>Load live Onshape model</button>
+          <button type="button" class="secondary-button" id="check-onshape-source" hidden>Check for Onshape updates</button>
+          <button type="button" id="activate-onshape-source" hidden>Activate checked revision</button>
           <button type="button" class="secondary-button" id="restore-fixture-source" hidden>Restore controlled fixture</button>
         </div>
       </section>
@@ -573,7 +575,9 @@ function renderDesignSource() {
   card.dataset.source = designSource.sourceId
   document.querySelector('#source-title').textContent = designSource.label
   document.querySelector('#source-detail').textContent = isLive
-    ? `${design.designId} measured live from Onshape at microversion ${designSource.provenance.microversionId.slice(0, 8)}.`
+    ? workflowState.pendingDesignSnapshot
+      ? `A newer checked revision (${workflowState.pendingDesignSnapshot.design.revisionId}) is ready to activate.`
+      : `${design.designId} measured live from Onshape at microversion ${designSource.provenance.microversionId.slice(0, 8)}.`
     : 'BRKT-001 revision B ships with the app so the workflow runs with no account or setup.'
 
   const provenance = document.querySelector('#source-provenance')
@@ -585,8 +589,12 @@ function renderDesignSource() {
   // Switching source discards derived evidence, so hide the control once the
   // engineer has work that a reload would throw away.
   const loadButton = document.querySelector('#load-onshape-source')
+  const checkButton = document.querySelector('#check-onshape-source')
+  const activateButton = document.querySelector('#activate-onshape-source')
   const restoreButton = document.querySelector('#restore-fixture-source')
   loadButton.hidden = !onshapeAvailable || isLive || inspectionStatus === 'complete'
+  checkButton.hidden = !isLive
+  activateButton.hidden = !workflowState.pendingDesignSnapshot
   restoreButton.hidden = !isLive
 }
 
@@ -630,7 +638,53 @@ function bindDesignSourceControls() {
     }
   })
 
+  document.querySelector('#check-onshape-source')?.addEventListener('click', async () => {
+    const button = document.querySelector('#check-onshape-source')
+    button.disabled = true
+    button.textContent = 'Checking Onshape…'
+    try {
+      await gate7Handlers.check_onshape_revision({}, {})
+    } catch (error) {
+      const detail = document.querySelector('#source-detail')
+      if (detail) detail.textContent = toolErrorEnvelope(error).error.message
+    } finally {
+      button.disabled = false
+      button.textContent = 'Check for Onshape updates'
+    }
+  })
+
+  document.querySelector('#activate-onshape-source')?.addEventListener('click', async () => {
+    const candidate = workflowState.pendingDesignSnapshot
+    if (!candidate) return
+    const derivedEvidenceExists = workflowState.inspectionStatus === 'complete'
+      || Boolean(workflowState.proposedChange)
+      || workflowState.supplierQuotes.length > 0
+      || Boolean(workflowState.reviewPackage)
+    if (derivedEvidenceExists
+      && !window.confirm('Activate the checked Onshape revision and discard evidence from the current revision?')) {
+      return
+    }
+    try {
+      await gate7Handlers.activate_onshape_revision({
+        expectedCurrentRevisionId: activeDesign().revisionId,
+        candidateRevisionId: candidate.design.revisionId,
+        discardDerivedEvidence: derivedEvidenceExists,
+      }, {})
+    } catch (error) {
+      const detail = document.querySelector('#source-detail')
+      if (detail) detail.textContent = toolErrorEnvelope(error).error.message
+    }
+  })
+
   document.querySelector('#restore-fixture-source')?.addEventListener('click', () => {
+    const derivedEvidenceExists = workflowState.inspectionStatus === 'complete'
+      || Boolean(workflowState.proposedChange)
+      || workflowState.supplierQuotes.length > 0
+      || Boolean(workflowState.reviewPackage)
+    if (derivedEvidenceExists
+      && !window.confirm('Restore the fixture and discard evidence from the active Onshape revision?')) {
+      return
+    }
     restoreControlledFixture()
     bracketViewer?.resetCamera()
   })

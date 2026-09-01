@@ -28,6 +28,8 @@ export const workflowState = {
     return this.activeDesignSnapshot.source
   },
   onshapeAvailable: false,
+  onshapeLastCheckedAt: null,
+  pendingDesignSnapshot: null,
   selectedFeatureId: DESIGN_FIXTURE.features.find((feature) => feature.selected)?.featureId ?? null,
   inspectionStatus: 'not_run',
   inspection: null,
@@ -143,6 +145,7 @@ export function selectFinding(findingId) {
 }
 
 export function activeDesignContext() {
+  const source = activeDesignSource()
   return {
     designId: activeDesign().designId,
     revisionId: activeDesign().revisionId,
@@ -158,6 +161,14 @@ export function activeDesignContext() {
     inspectionStatus: workflowState.inspectionStatus,
     ruleSetVersion: RULE_SET_VERSION,
     ruleSetScope: RULE_SET_SCOPE,
+    snapshotKey: activeSnapshotKey(),
+    source: {
+      sourceId: source.sourceId,
+      label: source.label,
+      provenance: source.provenance,
+      lastCheckedAt: workflowState.onshapeLastCheckedAt,
+      pendingRevisionId: workflowState.pendingDesignSnapshot?.design.revisionId ?? null,
+    },
   }
 }
 
@@ -455,6 +466,8 @@ export function replaceActiveDesignSnapshot(design, sourceDescriptor) {
   const previousSnapshot = workflowState.activeDesignSnapshot
   const nextSnapshot = createDesignSnapshot(design, sourceDescriptor)
   workflowState.activeDesignSnapshot = nextSnapshot
+  workflowState.pendingDesignSnapshot = null
+  workflowState.onshapeLastCheckedAt = sourceDescriptor.provenance?.retrievedAt ?? null
   clearDerivedState()
   appendAuditEvent(
     sourceDescriptor.actor ?? 'human',
@@ -520,6 +533,117 @@ async function loadOnshapeDesign(input, { signal } = {}) {
   }
 }
 
+function hasDerivedEvidence() {
+  return workflowState.inspectionStatus === 'complete'
+    || Boolean(workflowState.proposedChange)
+    || workflowState.supplierQuotes.length > 0
+    || Boolean(workflowState.reviewPackage)
+}
+
+function changedMeasurementKeys(currentDesign, candidateDesign) {
+  const changes = []
+  for (const candidateFeature of candidateDesign.features) {
+    const currentFeature = currentDesign.features.find(
+      (feature) => feature.featureId === candidateFeature.featureId,
+    )
+    for (const [key, value] of Object.entries(candidateFeature.dimensions)) {
+      if (currentFeature?.dimensions?.[key] !== value) {
+        changes.push(`${candidateFeature.featureId}.${key}`)
+      }
+    }
+  }
+  return changes
+}
+
+async function checkOnshapeRevision(input, { signal } = {}) {
+  abortIfRequested(signal)
+  assertEmptyObject(input)
+  if (activeDesignSource().sourceId !== 'onshape-live') {
+    throw new WorkflowRuleError('ONSHAPE_SOURCE_REQUIRED', 'load the Onshape design before checking its revision.')
+  }
+
+  const requestSequence = ++onshapeLoadSequence
+  const { fetchOnshapeDesign } = await import('./onshape-client.js')
+  const { design, provenance } = await fetchOnshapeDesign(signal)
+  abortIfRequested(signal)
+  if (requestSequence !== onshapeLoadSequence) {
+    throw new WorkflowRuleError('STALE_SOURCE_LOAD', 'a newer design-source request has already completed.', true)
+  }
+
+  workflowState.onshapeLastCheckedAt = provenance.retrievedAt
+  const changed = provenance.microversionId !== activeDesignSource().provenance?.microversionId
+  const measurementChanges = changed ? changedMeasurementKeys(activeDesign(), design) : []
+  workflowState.pendingDesignSnapshot = changed
+    ? createDesignSnapshot(design, {
+      sourceId: provenance.sourceId,
+      label: 'Onshape live document',
+      provenance,
+      actor: 'agent_or_manual_test',
+    })
+    : null
+  emitStateChange({
+    reason: 'onshape-revision-checked',
+    snapshotKey: activeSnapshotKey(),
+    candidateSnapshotKey: workflowState.pendingDesignSnapshot?.snapshotKey ?? null,
+  })
+  requestToolAvailabilityRefresh()
+
+  return {
+    ok: true,
+    changed,
+    currentRevisionId: activeDesign().revisionId,
+    currentMicroversionId: activeDesignSource().provenance?.microversionId,
+    candidateRevisionId: changed ? design.revisionId : null,
+    candidateMicroversionId: changed ? provenance.microversionId : null,
+    changedMeasurements: measurementChanges,
+    checkedAt: provenance.retrievedAt,
+    derivedEvidenceExists: hasDerivedEvidence(),
+    nextAction: changed
+      ? 'Activate the candidate revision to invalidate old evidence and continue with current geometry.'
+      : 'The active Onshape snapshot is current; existing evidence remains valid.',
+  }
+}
+
+async function activateOnshapeRevision(input, { signal } = {}) {
+  abortIfRequested(signal)
+  const keys = Object.keys(input ?? {}).sort()
+  if (keys.join('|') !== 'candidateRevisionId|discardDerivedEvidence|expectedCurrentRevisionId'
+    || typeof input.expectedCurrentRevisionId !== 'string'
+    || typeof input.candidateRevisionId !== 'string'
+    || typeof input.discardDerivedEvidence !== 'boolean') {
+    throw new WorkflowRuleError(
+      'INVALID_INPUT',
+      'expectedCurrentRevisionId, candidateRevisionId, and discardDerivedEvidence are required.',
+    )
+  }
+  if (input.expectedCurrentRevisionId !== activeDesign().revisionId) {
+    throw new WorkflowRuleError('STALE_REVISION', 'the active Onshape revision changed; check again.', true)
+  }
+  const candidate = workflowState.pendingDesignSnapshot
+  if (!candidate || candidate.design.revisionId !== input.candidateRevisionId) {
+    throw new WorkflowRuleError('ONSHAPE_UPDATE_REQUIRED', 'check Onshape and select the current candidate revision.', true)
+  }
+  const discardedDerivedEvidence = hasDerivedEvidence()
+  if (discardedDerivedEvidence && !input.discardDerivedEvidence) {
+    throw new WorkflowRuleError(
+      'DERIVED_EVIDENCE_EXISTS',
+      'activating this revision requires explicit permission to discard derived evidence.',
+    )
+  }
+
+  const previousRevisionId = activeDesign().revisionId
+  replaceActiveDesignSnapshot(candidate.design, candidate.source)
+  abortIfRequested(signal)
+  return {
+    ok: true,
+    previousRevisionId,
+    revisionId: activeDesign().revisionId,
+    snapshotKey: activeSnapshotKey(),
+    discardedDerivedEvidence,
+    nextAction: 'Run inspect_cnc_manufacturability against the activated Onshape revision.',
+  }
+}
+
 function audited(toolName, summary, handler) {
   return async (input, options = {}) => {
     try {
@@ -566,6 +690,16 @@ export const gate7Handlers = Object.freeze({
     'load_onshape_design',
     'Read live variable measurements from the connected Onshape Part Studio.',
     loadOnshapeDesign,
+  ),
+  check_onshape_revision: audited(
+    'check_onshape_revision',
+    'Checked whether the connected Onshape Part Studio has a newer microversion.',
+    checkOnshapeRevision,
+  ),
+  activate_onshape_revision: audited(
+    'activate_onshape_revision',
+    'Activated a checked Onshape revision and invalidated evidence from the previous snapshot.',
+    activateOnshapeRevision,
   ),
   generate_review_package: audited(
     'generate_review_package',
