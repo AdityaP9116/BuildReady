@@ -7,22 +7,26 @@ import { attachToolErrorContract } from './error-contract.js'
 
 export { DESIGN_FIXTURE }
 
-/**
- * The controlled fixture is the default design source. A live Onshape document
- * can replace it at runtime, but only through `setActiveDesign`, which resets
- * every derived record so findings can never outlive the geometry they measured.
- */
-let activeDesignSource = DESIGN_FIXTURE
+const CONTROLLED_SOURCE = Object.freeze({
+  sourceId: 'controlled-fixture',
+  label: 'Controlled fixture',
+  provenance: null,
+})
 
-/** @returns {import('./domain.js').DesignFixture} the design the whole workflow measures. */
-export function activeDesign() {
-  return activeDesignSource
+function createDesignSnapshot(design, source) {
+  return Object.freeze({
+    design,
+    source: Object.freeze({ ...source }),
+    snapshotKey: revisionPrecondition(design),
+  })
 }
 
 export const workflowState = {
   activeRoute: '/design',
-  designContext: DESIGN_FIXTURE,
-  designSource: { sourceId: 'controlled-fixture', label: 'Controlled fixture', provenance: null },
+  activeDesignSnapshot: createDesignSnapshot(DESIGN_FIXTURE, CONTROLLED_SOURCE),
+  get designSource() {
+    return this.activeDesignSnapshot.source
+  },
   onshapeAvailable: false,
   selectedFeatureId: DESIGN_FIXTURE.features.find((feature) => feature.selected)?.featureId ?? null,
   inspectionStatus: 'not_run',
@@ -43,9 +47,23 @@ export const workflowState = {
 }
 
 let eventSequence = 0
+let onshapeLoadSequence = 0
 
-function emitStateChange() {
-  window.dispatchEvent(new CustomEvent('buildready:statechange'))
+function emitStateChange(detail = {}) {
+  window.dispatchEvent(new CustomEvent('buildready:statechange', { detail }))
+}
+
+/** @returns {import('./domain.js').DesignFixture} the design the whole workflow measures. */
+export function activeDesign() {
+  return workflowState.activeDesignSnapshot.design
+}
+
+export function activeDesignSource() {
+  return workflowState.activeDesignSnapshot.source
+}
+
+export function activeSnapshotKey() {
+  return workflowState.activeDesignSnapshot.snapshotKey
 }
 
 function requestToolAvailabilityRefresh() {
@@ -65,7 +83,7 @@ export function setRegistrationState(status, toolCount = 0) {
   emitStateChange()
 }
 
-export function appendAuditEvent(actor, actionName, status, summary) {
+export function appendAuditEvent(actor, actionName, status, summary, { emit = true } = {}) {
   eventSequence += 1
   const event = {
     eventId: `audit-${String(eventSequence).padStart(3, '0')}`,
@@ -78,7 +96,7 @@ export function appendAuditEvent(actor, actionName, status, summary) {
 
   workflowState.lastToolCall = event
   workflowState.auditEvents = [...workflowState.auditEvents.slice(-9), event]
-  emitStateChange()
+  if (emit) emitStateChange()
   return event
 }
 
@@ -402,7 +420,7 @@ export function recordHumanDecision(decision) {
   return true
 }
 
-export function resetDemoState() {
+function clearDerivedState() {
   workflowState.selectedFeatureId = activeDesign().features.find((feature) => feature.selected)?.featureId ?? null
   workflowState.inspectionStatus = 'not_run'
   workflowState.inspection = null
@@ -418,6 +436,10 @@ export function resetDemoState() {
   workflowState.auditEvents = []
   workflowState.errorState = null
   eventSequence = 0
+}
+
+export function resetDemoState() {
+  clearDerivedState()
   emitStateChange()
   requestToolAvailabilityRefresh()
 }
@@ -429,20 +451,28 @@ export function resetDemoState() {
  * quote, or package produced against different geometry must never survive a
  * source change. Restoring the controlled fixture uses the same path.
  */
-export function setActiveDesign(design, sourceDescriptor) {
-  activeDesignSource = design
-  workflowState.designContext = design
-  resetDemoState()
-  workflowState.designSource = sourceDescriptor
+export function replaceActiveDesignSnapshot(design, sourceDescriptor) {
+  const previousSnapshot = workflowState.activeDesignSnapshot
+  const nextSnapshot = createDesignSnapshot(design, sourceDescriptor)
+  workflowState.activeDesignSnapshot = nextSnapshot
+  clearDerivedState()
   appendAuditEvent(
     sourceDescriptor.actor ?? 'human',
     'set_design_source',
     'completed',
     `Active design source is now ${sourceDescriptor.label} (${design.designId}/${design.revisionId}).`,
+    { emit: false },
   )
-  emitStateChange()
+  emitStateChange({
+    reason: 'design-source-replaced',
+    previousSnapshotKey: previousSnapshot.snapshotKey,
+    snapshotKey: nextSnapshot.snapshotKey,
+  })
+  requestToolAvailabilityRefresh()
   return true
 }
+
+export const setActiveDesign = replaceActiveDesignSnapshot
 
 /** Records whether this deployment has a reachable Onshape proxy. */
 export function setOnshapeAvailability(available) {
@@ -453,22 +483,23 @@ export function setOnshapeAvailability(available) {
 }
 
 export function restoreControlledFixture() {
-  return setActiveDesign(DESIGN_FIXTURE, {
-    sourceId: 'controlled-fixture',
-    label: 'Controlled fixture',
-    provenance: null,
-  })
+  onshapeLoadSequence += 1
+  return replaceActiveDesignSnapshot(DESIGN_FIXTURE, CONTROLLED_SOURCE)
 }
 
 async function loadOnshapeDesign(input, { signal } = {}) {
   abortIfRequested(signal)
   assertEmptyObject(input)
+  const requestSequence = ++onshapeLoadSequence
 
   const { fetchOnshapeDesign } = await import('./onshape-client.js')
   const { design, provenance } = await fetchOnshapeDesign(signal)
   abortIfRequested(signal)
+  if (requestSequence !== onshapeLoadSequence) {
+    throw new WorkflowRuleError('STALE_SOURCE_LOAD', 'a newer design-source request has already completed.', true)
+  }
 
-  setActiveDesign(design, {
+  replaceActiveDesignSnapshot(design, {
     sourceId: provenance.sourceId,
     label: 'Onshape live document',
     provenance,

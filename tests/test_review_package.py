@@ -71,7 +71,9 @@ class ReviewPackageContractTests(unittest.TestCase):
         self.assertIn("JSON.stringify(workflowState.reviewPackage, null, 2)", self.app)
 
     def test_reset_clears_the_complete_package_chain(self) -> None:
-        reset_block = self.state.split("export function resetDemoState()", 1)[1].split("function audited", 1)[0]
+        reset_block = self.state.split("function clearDerivedState()", 1)[1].split("export function resetDemoState()", 1)[0]
+        public_reset = self.state.split("export function resetDemoState()", 1)[1].split("export function replaceActiveDesignSnapshot", 1)[0]
+        self.assertIn("clearDerivedState()", public_reset)
         for assignment in (
             "workflowState.inspection = null",
             "workflowState.proposedChange = null",
