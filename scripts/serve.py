@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+try:
+    from scripts.fea_service import FeaService, FeaServiceError, error_payload
+except ModuleNotFoundError:  # Direct `python scripts/serve.py` execution.
+    from fea_service import FeaService, FeaServiceError, error_payload
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "web"
@@ -30,6 +35,12 @@ SECURITY_HEADERS = {
 
 
 ONSHAPE_ENDPOINT = "/api/onshape/design"
+FEA_CAPABILITIES_ENDPOINT = "/api/fea/capabilities"
+FEA_STUDIES_ENDPOINT = "/api/fea/studies"
+FEA_STUDY_PATTERN = re.compile(
+    r"^/api/fea/studies/(?P<study_id>study-[a-f0-9]{16})(?:/(?P<action>approve-and-submit|status|results))?$"
+)
+MAX_FEA_REQUEST_BYTES = 64 * 1024
 ONSHAPE_REQUIRED_ENV = (
     "ONSHAPE_ACCESS_KEY",
     "ONSHAPE_SECRET_KEY",
@@ -52,6 +63,16 @@ ID_PATTERN = re.compile(r"^[A-Za-z0-9]{8,40}$")
 _cache: dict[str, dict[str, Any]] = {}
 _inflight: dict[str, threading.Event] = {}
 _cache_lock = threading.Lock()
+_fea_service: FeaService | None = None
+_fea_service_lock = threading.Lock()
+
+
+def local_fea_service() -> FeaService:
+    global _fea_service
+    with _fea_service_lock:
+        if _fea_service is None:
+            _fea_service = FeaService.from_environment()
+        return _fea_service
 
 
 class FatalOnshapeError(RuntimeError):
@@ -294,6 +315,28 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        if request_path == FEA_CAPABILITIES_ENDPOINT:
+            self.send_json(200, local_fea_service().capabilities())
+            return
+
+        fea_match = FEA_STUDY_PATTERN.fullmatch(request_path)
+        if fea_match:
+            try:
+                study_id = fea_match.group("study_id")
+                action = fea_match.group("action")
+                if action == "status":
+                    payload = local_fea_service().get_study(study_id, advance=True)
+                elif action == "results":
+                    payload = local_fea_service().get_results(study_id)
+                elif action is None:
+                    payload = local_fea_service().get_study(study_id)
+                else:
+                    raise FeaServiceError("FEA_METHOD_NOT_ALLOWED", "Use POST for this FEA action.", 405)
+                self.send_json(200, payload)
+            except FeaServiceError as error:
+                self.send_json(*error_payload(error))
+            return
+
         relative_path = request_path.lstrip("/")
         requested_file = WEB_ROOT / relative_path
 
@@ -301,6 +344,50 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
             self.path = "/index.html"
 
         super().do_GET()
+
+    def do_POST(self) -> None:
+        request_path = urlsplit(self.path).path
+        try:
+            payload = self.read_json()
+            if request_path == FEA_STUDIES_ENDPOINT:
+                response = local_fea_service().create_study(payload)
+                self.send_json(201 if response["created"] else 200, response)
+                return
+
+            fea_match = FEA_STUDY_PATTERN.fullmatch(request_path)
+            if fea_match and fea_match.group("action") == "approve-and-submit":
+                response = local_fea_service().approve_and_submit(
+                    fea_match.group("study_id"), payload
+                )
+                self.send_json(202, response)
+                return
+            raise FeaServiceError("FEA_ROUTE_NOT_FOUND", "The requested FEA endpoint does not exist.", 404)
+        except FeaServiceError as error:
+            self.send_json(*error_payload(error))
+
+    def read_json(self) -> dict[str, Any]:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as error:
+            raise FeaServiceError("FEA_INVALID_REQUEST", "Content-Length is invalid.") from error
+        if length <= 0 or length > MAX_FEA_REQUEST_BYTES:
+            raise FeaServiceError("FEA_INVALID_REQUEST", "The JSON request size is invalid.", 413)
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise FeaServiceError("FEA_INVALID_REQUEST", "The request body must be valid JSON.") from error
+        if not isinstance(payload, dict):
+            raise FeaServiceError("FEA_INVALID_REQUEST", "The request body must be a JSON object.")
+        return payload
+
+    def send_json(self, status: int, payload: dict[str, Any]) -> None:
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def end_headers(self) -> None:
         for name, value in SECURITY_HEADERS.items():
@@ -318,6 +405,7 @@ def main() -> None:
     print(f"BuildReady available at http://{args.host}:{args.port}")
     configured = all(os.environ.get(name) for name in ONSHAPE_REQUIRED_ENV)
     print(f"Onshape source: {'configured' if configured else 'not configured (fixture-only mode)'}")
+    print(f"FEA provider: {local_fea_service().provider}")
 
     try:
         server.serve_forever()
