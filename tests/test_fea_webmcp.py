@@ -16,6 +16,7 @@ class FeaWebMcpTests(unittest.TestCase):
         cls.webmcp = (ROOT / "web" / "webmcp.js").read_text(encoding="utf-8")
         cls.client = (ROOT / "web" / "fea-client.js").read_text(encoding="utf-8")
         cls.server = (ROOT / "scripts" / "serve.py").read_text(encoding="utf-8")
+        cls.review = (ROOT / "web" / "review-package.js").read_text(encoding="utf-8")
         cls.fixture = (ROOT / "web" / "fea-recorded-result.json").read_text(encoding="utf-8")
 
     def test_simulation_route_and_five_stage_progress_are_visible(self) -> None:
@@ -75,6 +76,14 @@ class FeaWebMcpTests(unittest.TestCase):
         self.assertIn("postActiveFeaSnapshot(snapshotKey)", self.state)
         self.assertIn("'/api/fea/current-snapshot'", self.client)
         self.assertIn("FEA_CURRENT_SNAPSHOT_ENDPOINT", self.server)
+
+    def test_simulation_evidence_propagates_into_quotes_and_review_exports(self) -> None:
+        self.assertIn("setSimulationEvidence", self.state)
+        self.assertIn("simulationStudyHash", (ROOT / "web" / "state.js").read_text(encoding="utf-8"))
+        self.assertIn("simulationResultHash", self.review)
+        self.assertIn("simulationEvidence.result.resultHash", self.review)
+        self.assertIn("## Simulation evidence", self.review)
+        self.assertIn('id="review-simulation-provider"', self.app)
 
 
 if __name__ == "__main__":

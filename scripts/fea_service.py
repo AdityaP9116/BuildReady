@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -336,6 +337,12 @@ class FeaService:
         study = self.store.get_study(study_id)
         if payload["expectedSnapshotKey"] != study["snapshotKey"] or payload["studyHash"] != study["studyHash"]:
             raise FeaServiceError("FEA_STALE_APPROVAL", "The approval does not match the frozen study.", 409, True)
+        if study["currentness"] != "CURRENT":
+            raise FeaServiceError("FEA_STALE_APPROVAL", "The frozen study no longer matches the active snapshot.", 409)
+        if study["approval"]:
+            return {"ok": True, "study": study}
+        if study["lifecycleState"] != "VALIDATED":
+            raise FeaServiceError("FEA_INVALID_STATE", "Only a validated study can be approved.", 409)
         now = self.clock()
         run_id = f"run-{study['studyHash'][7:19]}"
         approval = {
@@ -385,6 +392,11 @@ class FeaService:
             )
             result["source"]["snapshotKey"] = study["snapshotKey"]
             result["inputs"] = study["manifest"]
+            result["hashScope"] = "normalized-result-excluding-artifacts-and-resultHash"
+            hash_input = {
+                key: value for key, value in result.items() if key not in {"artifacts", "resultHash"}
+            }
+            result["resultHash"] = sha256_value(hash_input)
             artifact = self.store.put_artifact(
                 study["studyId"],
                 study["runId"],
@@ -407,6 +419,8 @@ class FeaService:
             raise FeaServiceError("FEA_INVALID_MANIFEST", "The study manifest has an invalid shape.")
         if manifest["analysisType"] != self.domain["analysisType"]:
             raise FeaServiceError("FEA_INVALID_MANIFEST", "The analysis type is not supported.")
+        if manifest["schemaVersion"] != "fea-study-1.0.0":
+            raise FeaServiceError("FEA_INVALID_MANIFEST", "The study schema version is not supported.")
         if manifest["templateVersion"] != self.domain["template"]["templateVersion"]:
             raise FeaServiceError("FEA_INVALID_MANIFEST", "The template version is not supported.")
         unsigned = {key: value for key, value in manifest.items() if key != "studyHash"}
@@ -414,6 +428,72 @@ class FeaService:
             raise FeaServiceError("FEA_HASH_MISMATCH", "The study hash does not match its canonical manifest.")
         if manifest["selections"] != self.domain["selectionContract"]:
             raise FeaServiceError("FEA_INVALID_SELECTION", "The required saved selections are not exact.")
+        snapshot_key = manifest["snapshotKey"]
+        if not isinstance(snapshot_key, str) or not 1 <= len(snapshot_key) <= 240:
+            raise FeaServiceError("FEA_INVALID_MANIFEST", "The snapshot key is invalid.")
+
+        expected_materials = self.domain["materials"]
+        material = manifest["material"]
+        if not isinstance(material, dict) or set(material) != {
+            "materialKey", "label", "elasticModulusPa", "poissonRatio", "densityKgM3",
+            "yieldStrengthPa", "propertySource", "reviewedSourceRequiredForProduction",
+        }:
+            raise FeaServiceError("FEA_INVALID_MATERIAL", "The controlled material shape is invalid.")
+        material_key = material["materialKey"]
+        if material_key not in expected_materials or material != {
+            "materialKey": material_key, **expected_materials[material_key]
+        }:
+            raise FeaServiceError("FEA_INVALID_MATERIAL", "The controlled material properties are not exact.")
+
+        load = manifest["load"]
+        if not isinstance(load, dict) or set(load) != {
+            "type", "enteredMagnitude", "enteredUnit", "magnitudeN", "direction"
+        }:
+            raise FeaServiceError("FEA_INVALID_LOAD", "The force load shape is invalid.")
+        policy = self.domain["loadPolicy"]
+        if load["type"] != policy["supportedType"] or load["enteredUnit"] not in policy["supportedUnits"]:
+            raise FeaServiceError("FEA_INVALID_LOAD", "Only the controlled force units are supported.")
+        entered = load["enteredMagnitude"]
+        magnitude_n = load["magnitudeN"]
+        if (
+            isinstance(entered, bool) or not isinstance(entered, (int, float)) or not math.isfinite(entered)
+            or isinstance(magnitude_n, bool) or not isinstance(magnitude_n, (int, float)) or not math.isfinite(magnitude_n)
+        ):
+            raise FeaServiceError("FEA_INVALID_LOAD", "The force magnitude must be finite.")
+        expected_n = entered * (1000 if load["enteredUnit"] == "kN" else 1)
+        if (
+            not policy["minimumN"] <= magnitude_n <= policy["maximumN"]
+            or not math.isclose(magnitude_n, expected_n, rel_tol=0, abs_tol=1e-9)
+        ):
+            raise FeaServiceError("FEA_INVALID_LOAD", "The normalized force magnitude is invalid.")
+        direction = load["direction"]
+        if (
+            not isinstance(direction, list) or len(direction) != 3
+            or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in direction)
+            or not math.isclose(math.sqrt(sum(value * value for value in direction)), 1, rel_tol=0, abs_tol=1e-9)
+        ):
+            raise FeaServiceError("FEA_INVALID_DIRECTION", "The force direction must be a normalized XYZ vector.")
+
+        mesh = manifest["mesh"]
+        preset = mesh.get("preset") if isinstance(mesh, dict) else None
+        if preset not in self.domain["meshPresets"] or mesh != {
+            "preset": preset, **self.domain["meshPresets"][preset]
+        }:
+            raise FeaServiceError("FEA_INVALID_MESH", "The controlled mesh preset is not exact.")
+
+        requirements = manifest["requirements"]
+        limits = self.domain["requirementLimits"]
+        if not isinstance(requirements, dict) or set(requirements) != {
+            "minimumSafetyFactor", "maximumDisplacementMm"
+        }:
+            raise FeaServiceError("FEA_INVALID_REQUIREMENTS", "The requirements shape is invalid.")
+        for key, bounds in limits.items():
+            value = requirements[key]
+            if (
+                isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                or not bounds["minimum"] <= value <= bounds["maximum"]
+            ):
+                raise FeaServiceError("FEA_INVALID_REQUIREMENTS", f"{key} is outside the controlled range.")
 
 
 def error_payload(error: FeaServiceError) -> tuple[int, dict[str, Any]]:

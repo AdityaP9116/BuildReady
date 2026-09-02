@@ -55,9 +55,9 @@ class SubmissionPacketTests(unittest.TestCase):
 
     def test_demo_script_targets_the_official_time_limit(self) -> None:
         script = (self.submission_dir / "DEMO_SCRIPT.md").read_text(encoding="utf-8")
-        self.assertIn("Target runtime: 145–155 seconds", script)
+        self.assertIn("Target runtime: 165–175 seconds", script)
         self.assertIn("Official maximum: under 3 minutes", script)
-        self.assertIn("## 2:34–2:48 — Close", script)
+        self.assertIn("## 2:42–2:55 — Close", script)
 
     def test_state_is_drafting_and_does_not_claim_completion(self) -> None:
         state_file = ROOT / ".devpost-hackathon-state.json"

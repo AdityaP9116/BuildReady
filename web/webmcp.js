@@ -1,4 +1,4 @@
-import { activeDesign, activeDesignSource, gate7Handlers, setRegistrationState, workflowState } from './state.js'
+import { activeDesign, activeDesignSource, activeSnapshotKey, gate7Handlers, setRegistrationState, workflowState } from './state.js'
 import { PROPOSAL_POLICY } from './domain.js'
 import { feaHandlers, feaState } from './fea-state.js'
 
@@ -208,7 +208,7 @@ const quoteComparisonTool = Object.freeze({
 const reviewPackageTool = Object.freeze({
   name: 'generate_review_package',
   title: 'Generate review package',
-  description: 'Validate the complete inspected, human-reviewed, and quoted workflow state, then create one visible evidence package with JSON and Markdown downloads.',
+  description: 'Validate the complete inspected, human-reviewed, simulated, and quoted workflow state, then create one visible evidence package with JSON and Markdown downloads.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -361,6 +361,9 @@ export function gate7Tools(route = '/design') {
   }
   if (workflowState.inspectionStatus === 'complete'
     && ['approved', 'rejected'].includes(workflowState.decisionStatus)
+    && workflowState.simulationEvidence?.lifecycleState === 'COMPLETE'
+    && workflowState.simulationEvidence?.currentness === 'CURRENT'
+    && workflowState.simulationEvidence?.snapshotKey === activeSnapshotKey()
     && workflowState.supplierQuotes.length === 0) {
     tools.push(quoteComparisonTool)
   }

@@ -22,6 +22,8 @@ class ReviewPackageContractTests(unittest.TestCase):
             "STALE_INSPECTION",
             "DECISION_REQUIRED",
             "STALE_DECISION",
+            "SIMULATION_REQUIRED",
+            "STALE_SIMULATION",
             "QUOTES_REQUIRED",
             "STALE_QUOTES",
         ):
@@ -40,15 +42,20 @@ class ReviewPackageContractTests(unittest.TestCase):
             "measurementCount",
             "evidenceReferences",
             "supplierComparison",
+            "simulation",
+            "resultHash",
+            "requirements",
             "configurationHash",
             "auditTrail",
         ):
             self.assertIn(field, self.review)
         self.assertIn("not production approval", self.review)
-        self.assertIn("REVIEW_PACKAGE_SCHEMA_VERSION = '1.1.0'", self.review)
+        self.assertIn("REVIEW_PACKAGE_SCHEMA_VERSION = '1.2.0'", self.review)
         self.assertIn("designSnapshot: fixture.fixtureVersion", self.review)
         self.assertNotIn("designFixture: fixture.fixtureVersion", self.review)
         self.assertIn("function markdownText", self.review)
+        self.assertIn("## Simulation evidence", self.review)
+        self.assertIn("simulationResultHash", self.review)
 
     def test_live_evidence_uses_onshape_revision_provenance(self) -> None:
         adapter = (ROOT / "web" / "onshape-adapter.js").read_text(encoding="utf-8")
@@ -73,6 +80,7 @@ class ReviewPackageContractTests(unittest.TestCase):
             "configurationHash": "fnv1a-12345678",
             "findingCount": 5,
             "quoteCount": 2,
+            "simulationStudyId": "study-b83d0af93c5a7536",
             "auditEventCount": 5,
             "formats": ["json", "markdown"],
             "nextAction": "Review the visible package and download JSON or Markdown from the Review page.",

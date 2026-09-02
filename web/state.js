@@ -40,6 +40,7 @@ export const workflowState = {
   decisionRecord: null,
   supplierRequests: [],
   supplierQuotes: [],
+  simulationEvidence: null,
   reviewPackage: null,
   registeredToolCount: 0,
   registrationStatus: 'unsupported',
@@ -170,6 +171,22 @@ export function activeDesignContext() {
       pendingRevisionId: workflowState.pendingDesignSnapshot?.design.revisionId ?? null,
     },
   }
+}
+
+export function setSimulationEvidence(evidence) {
+  const boundResultHash = workflowState.supplierRequests[0]?.simulationResultHash
+  const downstreamIsStale = Boolean(boundResultHash) && (
+    evidence?.result?.resultHash !== boundResultHash
+    || evidence?.currentness !== 'CURRENT'
+    || evidence?.snapshotKey !== activeSnapshotKey()
+  )
+  if (downstreamIsStale) {
+    workflowState.supplierRequests = []
+    workflowState.supplierQuotes = []
+    workflowState.reviewPackage = null
+  }
+  workflowState.simulationEvidence = evidence
+  emitStateChange({ reason: 'simulation-evidence-updated', snapshotKey: evidence?.snapshotKey ?? null })
 }
 
 async function getActiveDesignContext(input, { signal } = {}) {
@@ -308,6 +325,13 @@ async function prepareSupplierQuotes(input, { signal } = {}) {
   if (keys.length !== 1 || keys[0] !== 'quantity' || !Number.isInteger(input.quantity)) {
     throw new WorkflowRuleError('INVALID_INPUT', 'integer quantity is required.')
   }
+  const simulation = workflowState.simulationEvidence
+  if (!simulation || simulation.lifecycleState !== 'COMPLETE' || !simulation.result) {
+    throw new WorkflowRuleError('SIMULATION_REQUIRED', 'complete the bounded simulation workflow first.')
+  }
+  if (simulation.snapshotKey !== activeSnapshotKey() || simulation.currentness !== 'CURRENT') {
+    throw new WorkflowRuleError('STALE_SIMULATION', 'the simulation evidence does not match the active design snapshot.', true)
+  }
 
   const comparison = prepareQuoteComparison({
     fixture: activeDesign(),
@@ -322,6 +346,8 @@ async function prepareSupplierQuotes(input, { signal } = {}) {
     requestId: `request-${comparison.configurationHash}`,
     configurationHash: comparison.configurationHash,
     quantity: comparison.quantity,
+    simulationStudyHash: simulation.studyHash,
+    simulationResultHash: simulation.result.resultHash,
     generatedAt,
   }]
   workflowState.supplierQuotes = comparison.quotes.map((quote) => ({ ...quote, generatedAt }))
@@ -372,6 +398,7 @@ async function generateReviewPackage(input, { signal } = {}) {
     decisionRecord: workflowState.decisionRecord,
     supplierRequests: workflowState.supplierRequests,
     supplierQuotes: workflowState.supplierQuotes,
+    simulationEvidence: workflowState.simulationEvidence,
     auditEvents: workflowState.auditEvents,
     title: input?.title,
     generatedAt: new Date().toISOString(),
@@ -394,6 +421,7 @@ async function generateReviewPackage(input, { signal } = {}) {
     configurationHash: reviewPackage.supplierComparison.configurationHash,
     findingCount: reviewPackage.inspection.findingCount,
     quoteCount: reviewPackage.supplierComparison.quotes.length,
+    simulationStudyId: reviewPackage.simulation.studyId,
     auditEventCount: reviewPackage.auditTrail.length,
     formats: ['json', 'markdown'],
     nextAction: 'Review the visible package and download JSON or Markdown from the Review page.',
@@ -540,6 +568,7 @@ function hasDerivedEvidence() {
     || Boolean(workflowState.proposedChange)
     || workflowState.supplierQuotes.length > 0
     || Boolean(workflowState.reviewPackage)
+    || Boolean(workflowState.simulationEvidence)
 }
 
 function changedMeasurementKeys(currentDesign, candidateDesign) {

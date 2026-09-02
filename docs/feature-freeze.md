@@ -73,3 +73,13 @@ provenance; `cnc-rules.js` still decides what those measurements mean.
 
 **Still frozen.** No new workflow stage, supplier, machining rule, approval
 path, or package format.
+
+## Amendment 2 — bounded SimScale FEA integration (2026-09-02)
+
+The user explicitly approved a new simulation stage after the original freeze. The product path is now Inspect → Decide → Simulate → Compare → Package.
+
+**Implemented and verified.** A force-only linear-static contract, deterministic study and result hashes, durable local SQLite records, seven-day private artifact retention, visible human-only CAD-sharing/compute approval, recorded asynchronous provider, five state-scoped FEA WebMCP tools, stale-revision propagation, supplier gating, and schema 1.2 JSON/Markdown review evidence.
+
+**Still blocked from live mode.** The repository has a bounded read-only account probe, but no SimScale key or verified account/template evidence is configured. No STEP upload, project mutation, or paid run was attempted. `SIMULATION_PROVIDER=simscale` continues to fail closed until the manual and numerical checklist in `docs/simscale-setup.md` passes.
+
+**Authority boundary.** The agent may prepare, read, monitor, and compare. Only the visible engineer controls can acknowledge CAD sharing and compute use. Recorded metrics remain `indeterminate` and cannot support an engineering disposition.

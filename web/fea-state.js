@@ -1,4 +1,10 @@
-import { activeDesignSource, activeSnapshotKey, appendAuditEvent, recordToolCall } from './state.js'
+import {
+  activeDesignSource,
+  activeSnapshotKey,
+  appendAuditEvent,
+  recordToolCall,
+  setSimulationEvidence,
+} from './state.js'
 import { FEA_DOMAIN } from './fea-domain.js'
 import { createStudyManifest } from './fea-validation.js'
 import {
@@ -21,6 +27,32 @@ export const feaState = {
 }
 
 let capabilitiesPromise = null
+
+function clone(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value))
+}
+
+function publishSimulationEvidence() {
+  const study = feaState.study
+  if (!study) {
+    setSimulationEvidence(null)
+    return
+  }
+  const result = feaState.result
+  setSimulationEvidence(Object.freeze({
+    schemaVersion: 'workflow-fea-evidence-1.0.0',
+    studyId: study.studyId,
+    studyHash: study.studyHash,
+    snapshotKey: study.snapshotKey,
+    lifecycleState: study.lifecycleState,
+    currentness: study.currentness,
+    provider: feaState.capabilities?.provider ?? 'unknown',
+    live: feaState.capabilities?.live === true,
+    approvedAt: study.approvedAt,
+    manifest: clone(study.manifest),
+    result: clone(result),
+  }))
+}
 
 function emitFeaChange(reason) {
   window.dispatchEvent(new CustomEvent('buildready:feachange', { detail: { reason } }))
@@ -94,6 +126,7 @@ export async function prepareStaticStressStudy(input, { signal } = {}) {
   feaState.study = response.study
   feaState.result = response.study.result
   feaState.lastError = null
+  publishSimulationEvidence()
   recordToolCall('prepare_static_stress_study', 'completed', `Prepared ${response.study.studyId} for ${response.study.snapshotKey}.`)
   emitFeaChange('study-prepared')
   return compactStudy(response.study)
@@ -105,6 +138,7 @@ export async function readStaticStressStudy(input, { signal } = {}) {
   const response = await getFeaStudy(feaState.study.studyId, signal)
   feaState.study = response.study
   feaState.result = response.study.result
+  publishSimulationEvidence()
   recordToolCall('get_static_stress_study', 'completed', `Read ${response.study.studyId}.`)
   emitFeaChange('study-read')
   return compactStudy(response.study)
@@ -119,6 +153,7 @@ export async function approveAndSubmitHuman({ cadSharingAcknowledged, computeAck
     computeAcknowledged,
   }, signal)
   feaState.study = response.study
+  publishSimulationEvidence()
   appendAuditEvent('human', 'approve_and_submit_static_stress_study', 'completed', `Human approved ${response.study.studyId}; provider ${feaState.capabilities.provider}.`)
   emitFeaChange('study-approved')
   return compactStudy(response.study)
@@ -130,6 +165,7 @@ export async function readSimulationStatus(input, { signal } = {}) {
   const response = await getFeaStatus(feaState.study.studyId, signal)
   feaState.study = response.study
   feaState.result = response.study.result
+  publishSimulationEvidence()
   recordToolCall('get_simulation_status', 'completed', `${response.study.studyId} is ${response.study.lifecycleState}.`)
   emitFeaChange('status-refreshed')
   return compactStudy(response.study)
@@ -140,6 +176,7 @@ export async function readSimulationResults(input, { signal } = {}) {
   if (!feaState.study) throw new Error('FEA_STUDY_REQUIRED: prepare a static stress study first.')
   const response = await getFeaResults(feaState.study.studyId, signal)
   feaState.result = response.result
+  publishSimulationEvidence()
   recordToolCall('get_simulation_results', 'completed', `Read result ${response.result.runId}.`)
   emitFeaChange('results-loaded')
   return {
@@ -190,6 +227,7 @@ export function resetFeaState() {
   feaState.result = null
   feaState.lastError = null
   feaState.trackedSnapshotKey = activeSnapshotKey()
+  publishSimulationEvidence()
   emitFeaChange('reset')
 }
 
@@ -200,6 +238,7 @@ window.addEventListener('buildready:statechange', () => {
   if (feaState.study && feaState.study.snapshotKey !== snapshotKey && feaState.study.currentness !== 'STALE') {
     feaState.study = { ...feaState.study, currentness: 'STALE' }
     if (feaState.result) feaState.result = { ...feaState.result, currentness: 'stale' }
+    publishSimulationEvidence()
     emitFeaChange('active-snapshot-changed')
   }
   void postActiveFeaSnapshot(snapshotKey).catch((error) => {

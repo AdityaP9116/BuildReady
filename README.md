@@ -133,7 +133,7 @@ Approval is intentionally absent from the WebMCP surface. The visible UI records
 
 ### Guided experience and feature freeze
 
-The persistent header shows completed stages across every route and resets the entire derived workflow from anywhere. The initial design workspace explains Inspect → Decide → Compare → Package before presenting the evidence scene, and `/about` documents page-owned contracts, conditional registration, visible evidence, cleanup, and the separation between agent actions, human authority, and untrusted supplier data.
+The persistent header shows completed stages across every route and resets the entire derived workflow from anywhere. The initial design workspace explains Inspect → Decide → Simulate → Compare → Package before presenting the evidence scene, and `/about` documents page-owned contracts, conditional registration, visible evidence, cleanup, and the separation between agent actions, human authority, and untrusted provider or supplier data.
 
 The frozen post–Gate 9 scope and required final screenshot states are recorded in `docs/feature-freeze.md`. Gate 10 is limited to defect fixes, documentation, submission materials, capture guidance, deployment configuration, and external verification.
 
@@ -214,6 +214,18 @@ uv run --env-file .env python scripts/serve.py
 ```
 
 Configure with the variables in `.env.example` (Cloudflare secrets in production).
+
+### SimScale stress-simulation boundary
+
+The `/simulation` workspace now implements the complete provider-neutral orchestration path in explicitly labeled recorded mode: strict force-only validation, deterministic study hashes, durable SQLite state, a visible human-only CAD-sharing/compute approval, asynchronous lifecycle states, seven-day private artifact retention, revision invalidation, normalized evidence, and five route/state-scoped WebMCP tools. Recorded metrics are always `indeterminate` and cannot produce an engineering pass or fail.
+
+Before any live CAD upload or compute is enabled, run the bounded account preflight:
+
+```bash
+uv run python scripts/simscale_probe.py
+```
+
+The probe makes one authenticated read-only v1 request and omits keys, project names, and project IDs from its output. The remaining manual account, template, CAD-import, and numerical verification checklist is in `docs/simscale-setup.md`. `SIMULATION_PROVIDER=simscale` continues to fail closed until that evidence exists.
 
 ### Controlled rule set
 

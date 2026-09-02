@@ -71,6 +71,22 @@ class FeaServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(FeaServiceError, "saved selections"):
             self.service.create_study(bad)
 
+    def test_server_revalidates_every_controlled_manifest_section(self) -> None:
+        mutations = (
+            ("material", {**self.manifest["material"], "yieldStrengthPa": 999}),
+            ("load", {**self.manifest["load"], "magnitudeN": 999}),
+            ("load", {**self.manifest["load"], "direction": [0, 0, 0]}),
+            ("mesh", {**self.manifest["mesh"], "relativeSizing": 99}),
+            ("requirements", {**self.manifest["requirements"], "minimumSafetyFactor": 0.5}),
+        )
+        for section, value in mutations:
+            with self.subTest(section=section, value=value):
+                bad = {**self.manifest, section: value}
+                unsigned = {key: item for key, item in bad.items() if key != "studyHash"}
+                bad["studyHash"] = sha256_value(unsigned)
+                with self.assertRaises(FeaServiceError):
+                    self.service.create_study(bad)
+
     def test_human_acknowledgements_and_idempotency_guard_submission(self) -> None:
         study = self.service.create_study(self.manifest)["study"]
         with self.assertRaises(FeaServiceError) as missing:
@@ -91,6 +107,17 @@ class FeaServiceTests(unittest.TestCase):
         self.assertEqual("indeterminate", result["assessment"]["outcome"])
         self.assertTrue(result["artifacts"][0]["private"])
         self.assertTrue(any(self.paths.artifacts.rglob("normalized-result.json")))
+        hash_input = {
+            key: value for key, value in result.items() if key not in {"artifacts", "resultHash"}
+        }
+        self.assertEqual(sha256_value(hash_input), result["resultHash"])
+
+    def test_stale_study_cannot_be_approved(self) -> None:
+        study = self.service.create_study(self.manifest)["study"]
+        self.service.mark_snapshot_current("new-snapshot")
+        with self.assertRaises(FeaServiceError) as stale:
+            self.service.approve_and_submit(study["studyId"], self.approve_payload())
+        self.assertEqual("FEA_STALE_APPROVAL", stale.exception.code)
 
     def test_lifecycle_completion_and_currentness_are_independent(self) -> None:
         study = self.service.create_study(self.manifest)["study"]

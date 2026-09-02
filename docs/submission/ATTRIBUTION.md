@@ -15,6 +15,7 @@ The following are original controlled demonstration fixtures:
 - BRKT-001-B parametric bracket geometry and feature mapping.
 - CNC demonstration rules and thresholds.
 - AxisWorks and RapidMill fictional supplier records.
+- Recorded FEA result and analytical cantilever verification fixture.
 - UI design, copy, audit model, and review-package schema.
 
 The project includes no commercial supplier logos, proprietary CAD, customer data, licensed engineering standard text, or production claims.
@@ -33,4 +34,4 @@ Source is released under the repository's MIT License. Additional dependency and
 
 ## Safety disclosure
 
-BuildReady is a challenge demonstration. Its machining thresholds, geometry, suppliers, prices, lead times, and DFM notes are controlled fixtures and must not be treated as production engineering advice or commercial offers.
+BuildReady is a challenge demonstration. Its machining thresholds, geometry, recorded stress metrics, suppliers, prices, lead times, and DFM notes are controlled fixtures and must not be treated as production engineering advice, verified solver output, or commercial offers.

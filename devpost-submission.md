@@ -63,14 +63,14 @@ Codex was used throughout planning and implementation to:
 
 ## Architecture
 
-BuildReady is a static, client-side application with no npm packages or PyPI dependencies.
+BuildReady is a browser-native application with a Python-standard-library local orchestration service and no npm packages or PyPI dependencies.
 
 ```text
 Versioned JSON fixtures
         ↓
-Deterministic CNC + quote engines
+Deterministic CNC + FEA + quote engines
         ↓
-Audited in-memory workflow state
+Audited browser state + durable provider-neutral FEA records
         ↓
 Route/state-scoped WebMCP registrations
         ↓
@@ -86,10 +86,12 @@ The imperative WebMCP layer registers tools with strict JSON schemas and `readOn
 3. Run the inspection with severity `all`; confirm five findings (two high, three medium).
 4. Call `get_issue_details` for the corner finding; confirm the canvas and measurement card focus the same feature.
 5. Call `preview_radius_change` with the current corner finding and `3.5`; confirm it stops at `pending_human_decision`.
-6. Use the visible **Approve preview** control; confirm the audit actor is human and the quote tool appears.
-7. Call `prepare_quote_comparison` with quantity `1000`; confirm `/suppliers` shows AxisWorks at $12,080 / 18 days and RapidMill at $13,200 / 11 days with hash `fnv1a-28daab8d`.
-8. Call `generate_review_package`; confirm `/review` shows five findings, one human decision, two quotes, and JSON/Markdown download controls.
-9. Click persistent **Reset**; confirm `/design` returns to 0/4 complete with two initial tools and no findings.
+6. Use the visible **Approve preview** control; confirm the audit actor is human and the quote tool remains unavailable.
+7. Open `/simulation`; call `prepare_static_stress_study`; review the hash, check both human consent boxes, and click **Approve and run**.
+8. Call `get_simulation_status`, `get_simulation_results`, and `compare_simulation_to_requirements`; confirm recorded evidence is `indeterminate` and comparisons are `unknown`.
+9. Return to `/design`; call `prepare_quote_comparison` with quantity `1000`; confirm `/suppliers` shows AxisWorks at $12,080 / 18 days and RapidMill at $13,200 / 11 days with hash `fnv1a-28daab8d`.
+10. Call `generate_review_package`; confirm `/review` shows findings, human decision, simulation hashes/limitations, two quotes, and JSON/Markdown download controls.
+11. Click persistent **Reset**; confirm `/design` returns to 0/5 complete with two initial tools and no findings.
 
 Local verification:
 
@@ -117,12 +119,14 @@ Repository includes the MIT License, complete source, controlled fixtures, tests
 
 ## Screenshot Shot List
 
-1. Initial `/design` — onboarding, bracket, WebMCP available, 0/4 progress, two tools.
+1. Initial `/design` — onboarding, bracket, WebMCP available, 0/5 progress, two tools.
 2. Inspected design — five findings, synchronized visual highlight and measurement evidence.
 3. Pending proposal — ghosted 1.0 → 3.5 mm geometry and visible human-only controls.
-4. Supplier comparison — two quote cards, shared hash, price/schedule tradeoff, fictional-data notice.
-5. Review package — package ID, five findings, approved decision, two quotes, JSON/Markdown downloads.
-6. About page — conditional registration lifecycle and agent/human/untrusted-data boundaries.
+4. Simulation approval — frozen study hash, visible human consent, no approval WebMCP tool.
+5. Completed simulation — recorded/not-verified-live evidence and indeterminate limitation.
+6. Supplier comparison — two quote cards, shared hash, price/schedule tradeoff, fictional-data notice.
+7. Review package — package ID, five findings, approved decision, simulation hash, two quotes, JSON/Markdown downloads.
+8. About page — conditional registration lifecycle and agent/human/untrusted-data boundaries.
 
 ## Submission Readiness Notes
 
@@ -137,7 +141,8 @@ Repository includes the MIT License, complete source, controlled fixtures, tests
 ## Known Limitations
 
 - The bracket, five thresholds, and two suppliers are controlled demonstration fixtures, not production machining guidance or commercial offers.
-- Workflow state is session-only and resets on page reload; there is no backend persistence or authentication.
+- Design/quote UI state is session-only. FEA study/job/result state is durable locally in a gitignored SQLite database with private expiring artifacts; production storage and authentication remain unselected.
+- Live SimScale mode is disabled until the account, exact template payload, CAD transport, and numerical verification checklist pass.
 - The canvas is a purpose-built parametric evidence renderer, not a general CAD parser.
 - Chrome 149+ incognito and second-machine verification remain to be recorded after public deployment.
 - The application does not modify source CAD, contact suppliers, place orders, or approve production.

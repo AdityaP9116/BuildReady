@@ -11,7 +11,7 @@ Official requirements and form fields were fetched live from Devpost on 2026-08-
 - [x] Product description aligned to WebMCP Leverage, Execution, Potential Impact, and Creativity & Ambition.
 - [x] Testing instructions and 14-case adversarial prompt suite documented.
 - [x] Demo script targets less than three minutes with audio.
-- [x] Screenshot shot list covers six proof states.
+- [x] Screenshot shot list covers the design, authority, simulation, supplier, review, and trust proof states.
 - [x] Challenge-period work and AI/Codex usage documented.
 - [x] Attribution, dependencies, limitations, and safety boundaries documented.
 
@@ -20,7 +20,7 @@ Official requirements and form fields were fetched live from Devpost on 2026-08-
 - [ ] Deploy the `web/` directory and add the public live URL.
 - [ ] Verify the full WebMCP path on the public origin in ChatGPT's in-app browser.
 - [ ] Verify Chrome 149+ with WebMCP testing enabled, incognito/fresh state, and a second profile or machine.
-- [ ] Capture the six planned screenshots and select 3–5 for Devpost.
+- [ ] Capture the planned screenshots and select 3–5 for Devpost.
 - [ ] Record a clear-audio demo below three minutes and upload it publicly to YouTube.
 - [ ] Add the YouTube URL to `devpost-submission.md` and the Devpost project.
 - [ ] Confirm Submitter Type.
@@ -36,4 +36,5 @@ Official requirements and form fields were fetched live from Devpost on 2026-08-
 - Do not claim a public deployment before the URL is reachable externally.
 - Do not claim Chrome or second-machine compatibility before those runs are recorded.
 - Do not claim production engineering validity, real supplier pricing, CAD modification, purchasing, or manufacturing approval.
+- Do not claim live or verified SimScale output until the account and numerical validation gate passes.
 - Do not claim anything has been sent to Devpost until the final submit flow returns a live entry URL.

@@ -319,7 +319,7 @@ function renderSuppliers() {
         <section class="empty-state">
           <span>Gate 6</span>
           <h2>No reviewed configuration has been quoted.</h2>
-          <p>Complete the inspection, preview a radius change, record a visible human decision, and run the comparison.</p>
+          <p>Complete the inspection, record a visible human decision, finish the bounded simulation stage, and then run the comparison.</p>
           <a class="button-link" href="/design" data-route>Return to design</a>
         </section>
       </div>
@@ -401,7 +401,7 @@ function renderReview() {
       ${pageIntro(
         'Evidence package',
         reviewPackage.title,
-        'One package ties visible findings, the human decision, normalized quotes, provenance, versions, and the audit timeline to the same configuration.',
+        'One package ties visible findings, the human decision, revision-bound simulation evidence, normalized quotes, provenance, versions, and the audit timeline to the same configuration.',
         `<div class="part-chip"><span>Package</span><strong>${reviewPackage.packageId}</strong></div>`,
       )}
       <aside class="compatibility-note warning-note"><strong>Demonstration evidence</strong><span>${reviewPackage.disclaimer}</span></aside>
@@ -410,7 +410,19 @@ function renderReview() {
         <article><span>Source</span><strong>${reviewPackage.design.source.label}</strong><small>${reviewPackage.design.snapshotKey}</small></article>
         <article><span>Findings</span><strong>${reviewPackage.inspection.findingCount}</strong><small>${reviewPackage.inspection.counts.high} high · ${reviewPackage.inspection.counts.medium} medium</small></article>
         <article><span>Decision</span><strong>${reviewPackage.decision.decision}</strong><small>Actor: ${reviewPackage.decision.actor}</small></article>
+        <article><span>Simulation</span><strong>${reviewPackage.simulation.lifecycleState.toLowerCase()}</strong><small>${reviewPackage.simulation.currentness.toLowerCase()}</small></article>
         <article><span>Quotes</span><strong>${reviewPackage.supplierComparison.quotes.length}</strong><small>${reviewPackage.supplierComparison.configurationHash}</small></article>
+      </section>
+      <section class="review-section" aria-labelledby="review-simulation-heading">
+        <div class="review-section-heading"><div><p class="eyebrow">Revision-bound FEA evidence</p><h2 id="review-simulation-heading">Simulation record</h2></div><code id="review-simulation-result-hash"></code></div>
+        <dl class="agent-metrics fea-result-metrics">
+          <div><dt>Provider</dt><dd id="review-simulation-provider">—</dd></div>
+          <div><dt>Study</dt><dd id="review-simulation-study">—</dd></div>
+          <div><dt>Reviewed stress</dt><dd id="review-simulation-stress">—</dd></div>
+          <div><dt>Displacement</dt><dd id="review-simulation-displacement">—</dd></div>
+          <div><dt>Outcome</dt><dd id="review-simulation-outcome">—</dd></div>
+        </dl>
+        <p class="authority-note" id="review-simulation-limitations"></p>
       </section>
       <section class="review-section">
         <div class="review-section-heading"><div><p class="eyebrow">Inspection evidence</p><h2>Deterministic findings</h2></div><code>${reviewPackage.versions.cncRuleSet}</code></div>
@@ -452,19 +464,19 @@ function renderAbout() {
         <div class="review-section-heading"><div><p class="eyebrow">How WebMCP works here</p><h2 id="how-webmcp-title">The page publishes only the action valid right now.</h2></div><span class="stage-status ready">route + state scoped</span></div>
         <ol>
           <li><span>01</span><div><strong>Page-owned contracts</strong><p>BuildReady defines strict names, descriptions, JSON schemas, safety annotations, and handlers.</p></div></li>
-          <li><span>02</span><div><strong>Conditional registration</strong><p>Inspection unlocks details; a human decision unlocks quotes; complete quotes unlock the package.</p></div></li>
+          <li><span>02</span><div><strong>Conditional registration</strong><p>Inspection unlocks details; human-reviewed simulation unlocks quotes; complete quotes unlock the package.</p></div></li>
           <li><span>03</span><div><strong>Visible evidence</strong><p>Every tool updates the same model, cards, audit history, or review package the engineer sees.</p></div></li>
           <li><span>04</span><div><strong>Cleanup by default</strong><p>Leaving a route aborts its registrations, preventing stale or duplicate actions.</p></div></li>
         </ol>
       </section>
       <section class="trust-boundary-grid">
         <article><p class="eyebrow">Agent may</p><h2>Read, inspect, preview, compare, package</h2><p>These bounded actions produce evidence and reversible session state.</p></article>
-        <article><p class="eyebrow">Human only</p><h2>Approve or reject the preview</h2><p>No WebMCP approval, production-release, purchase, or geometry-commit tool exists.</p></article>
-        <article><p class="eyebrow">Untrusted data</p><h2>Supplier assumptions and notes</h2><p>They remain visible evidence and can never change authority or tool availability.</p></article>
+        <article><p class="eyebrow">Human only</p><h2>Approve design and provider work</h2><p>No WebMCP approval, CAD-sharing, compute-spend, production-release, purchase, or geometry-commit tool exists.</p></article>
+        <article><p class="eyebrow">Untrusted data</p><h2>Provider and supplier responses</h2><p>They remain visible evidence and can never change authority or tool availability.</p></article>
       </section>
       <section class="testing-instructions">
         <h2>Testing the complete challenge path</h2>
-        <p>Complete the inspected, human-reviewed, and quoted flow, then call <code>generate_review_package</code>. Confirm the Review page matches the visible workflow and both JSON and Markdown downloads contain the package ID, versions, findings, decision, quotes, audit trail, and disclaimer.</p>
+        <p>Complete the inspected, human-reviewed, simulated, and quoted flow, then call <code>generate_review_package</code>. Confirm the Review page matches the visible workflow and both JSON and Markdown downloads contain the package ID, versions, findings, decision, simulation hashes and limitations, quotes, audit trail, and disclaimer.</p>
       </section>
     </div>
   `
@@ -646,6 +658,8 @@ function updateDiagnostics() {
   }
   if (quoteComparisonButton) {
     quoteComparisonButton.disabled = !['approved', 'rejected'].includes(workflowState.decisionStatus)
+      || workflowState.simulationEvidence?.lifecycleState !== 'COMPLETE'
+      || workflowState.simulationEvidence?.currentness !== 'CURRENT'
       || workflowState.supplierQuotes.length > 0
   }
   bracketViewer?.setFindings(workflowState.findings)
@@ -769,6 +783,21 @@ function synchronizeSimulationWorkspace() {
   document.querySelector('#fea-result-displacement').textContent = displacement ? `${displacement.value} ${displacement.unit}` : '—'
   document.querySelector('#fea-result-assessment').textContent = result?.assessment?.outcome ?? '—'
   document.querySelector('#fea-result-limitations').textContent = result?.assessment?.limitations?.join(' ') ?? 'No solver evidence has been loaded.'
+}
+
+function synchronizeReviewSimulation() {
+  const packageEvidence = workflowState.reviewPackage?.simulation
+  const provider = document.querySelector('#review-simulation-provider')
+  if (!packageEvidence || !provider) return
+  provider.textContent = `${packageEvidence.provider}${packageEvidence.live ? ' (live)' : ' (recorded)'}`
+  document.querySelector('#review-simulation-study').textContent = packageEvidence.studyId
+  document.querySelector('#review-simulation-result-hash').textContent = packageEvidence.result.resultHash
+  const stress = packageEvidence.result.metrics.reviewedRegionVonMisesStress
+  document.querySelector('#review-simulation-stress').textContent = `${stress.value} ${stress.unit}`
+  const displacement = packageEvidence.result.metrics.maximumDisplacement
+  document.querySelector('#review-simulation-displacement').textContent = `${displacement.value} ${displacement.unit}`
+  document.querySelector('#review-simulation-outcome').textContent = packageEvidence.result.assessment.outcome
+  document.querySelector('#review-simulation-limitations').textContent = packageEvidence.result.assessment.limitations.join(' ')
 }
 
 function defaultFeaToolInput(toolName) {
@@ -1056,6 +1085,7 @@ async function renderRoute() {
     bindSimulationControls()
     synchronizeSimulationWorkspace()
   }
+  if (path === '/review') synchronizeReviewSimulation()
   bindManualToolControls()
   bindWorkflowControls()
   updateDiagnostics()

@@ -659,6 +659,8 @@ No OpenAI API key is required for the direct ChatGPT + WebMCP experience. ChatGP
 
 ### Gate FEA-0 — Prove account access
 
+**Implementation note (2026-09-02):** the bounded read-only account probe and setup checklist are implemented in `scripts/simscale_probe.py` and `docs/simscale-setup.md`. The exit check remains open until the user's real account, manual baseline, and numerical verification evidence pass; live mode therefore remains disabled.
+
 - Confirm the SimScale plan/account permits API access and has sufficient compute credits.
 - Create the manual baseline static-analysis template.
 - Make one authenticated read-only API request.

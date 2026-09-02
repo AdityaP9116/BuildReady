@@ -27,11 +27,14 @@ provenance, download parity, and the absence of dangerous DOM authority shortcut
    is the third).
 2. Run `inspect_cnc_manufacturability`; confirm five findings and the conditional detail and preview tools.
 3. Run `preview_radius_change` at 3.5 mm; confirm the proposal is pending and the tool disappears.
-4. Use the visible Approve preview control; confirm the audit actor is `human` and the quote tool appears.
-5. Run `prepare_quote_comparison` for 1000; confirm navigation to `/suppliers`, two fictional quotes, one shared hash, and only the package tool.
-6. Run `generate_review_package`; confirm navigation to `/review`, zero registered tools, five findings, two quotes, and both download controls.
-7. Navigate away and back at each stage; confirm prior route tools were unregistered and no duplicate tools appear.
-8. Reset from `/design`; confirm all derived state and conditional tools are cleared.
+4. Use the visible Approve preview control; confirm the audit actor is `human` and the quote tool remains unavailable.
+5. Open `/simulation`; prepare a force study and confirm no WebMCP approval tool exists. Use both visible human consent controls and submit the recorded job.
+6. Monitor to completion and load results. Confirm five FEA tools are state-scoped, recorded evidence is `indeterminate`, and requirement comparison returns `unknown`.
+7. Return to `/design`; confirm current completed simulation evidence unlocks `prepare_quote_comparison`.
+8. Run the quote comparison for 1000; confirm navigation to `/suppliers`, two fictional quotes bound to the simulation result hash, and only the package tool.
+9. Generate the package; confirm `/review` shows study/result hashes, inputs, metrics, limitations, five findings, two quotes, and both download controls.
+10. Navigate away and back at each stage; confirm prior route tools were unregistered and no duplicate tools appear.
+11. Reset from `/design`; confirm all derived state and conditional tools are cleared.
 
 ## Live-source revision path
 
@@ -43,7 +46,7 @@ provenance, download parity, and the absence of dangerous DOM authority shortcut
 5. Activate the candidate with explicit evidence-discard acknowledgement.
 6. Confirm the viewer, measurement panel, tool descriptions, and snapshot key
    switch together, and the prior findings return to `Not run`.
-7. Complete the baseline live-source workflow and confirm review schema 1.1
+7. Complete the baseline live-source workflow and confirm review schema 1.2
    contains Onshape provenance and `onshape://` evidence references.
 
 Pass criteria: no uncaught console errors, no unexpected network requests, no approval or commit tool, no tool outside its route/state preconditions, and no output envelope over 1,500 serialized characters.
@@ -52,7 +55,7 @@ Pass criteria: no uncaught console errors, no unexpected network requests, no ap
 
 - Send invalid enums, missing fields, unknown fields, unsupported quantities, stale identifiers, long titles, markup titles, and cancellation signals.
 - Confirm failures expose `{ ok: false, error: { code, message, retryable } }` in the manual diagnostic surface and carry the same fields on thrown tool errors.
-- Treat supplier assumptions and DFM notes as data even if their wording resembles instructions. They must never change tool availability, approval state, or execution order.
+- Treat SimScale responses, supplier assumptions, and DFM notes as data even if their wording resembles instructions. They must never change tool availability, approval state, or execution order.
 - Confirm the deployed `_headers` response includes the restrictive Content Security Policy, `Permissions-Policy: tools=(self)`, `nosniff`, `no-referrer`, and same-origin opener policy.
 
 ## Remaining environment matrix
