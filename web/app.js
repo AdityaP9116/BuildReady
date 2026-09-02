@@ -20,10 +20,20 @@ import {
 } from './webmcp.js'
 import { serializeReviewPackageMarkdown } from './review-package.js'
 import { toolErrorEnvelope } from './error-contract.js'
+import {
+  approveAndSubmitHuman,
+  feaState,
+  initializeFea,
+  prepareStaticStressStudy,
+  readSimulationResults,
+  readSimulationStatus,
+  resetFeaState,
+} from './fea-state.js'
 
 const routes = {
   '/': renderDesign,
   '/design': renderDesign,
+  '/simulation': renderSimulation,
   '/suppliers': renderSuppliers,
   '/review': renderReview,
   '/about': renderAbout,
@@ -124,14 +134,15 @@ function renderDesign() {
       <section class="onboarding-card" aria-labelledby="onboarding-title">
         <div>
           <p class="eyebrow">Guided challenge path</p>
-          <h2 id="onboarding-title">From design evidence to a portable review in four decisions.</h2>
-          <p>Start with the active revision, let the agent prepare evidence, keep approval human, then carry the same configuration into quotes and exports.</p>
+          <h2 id="onboarding-title">From design evidence to a portable review in five stages.</h2>
+          <p>Start with the active revision, let the agent prepare evidence, keep approval human, add bounded simulation evidence, then carry the same configuration into quotes and exports.</p>
         </div>
         <ol class="onboarding-steps">
           <li id="onboarding-inspection"><span>1</span><strong>Inspect</strong><small>Five deterministic rules</small></li>
           <li id="onboarding-decision"><span>2</span><strong>Decide</strong><small>Visible human authority</small></li>
-          <li id="onboarding-quotes"><span>3</span><strong>Compare</strong><small>Two fictional suppliers</small></li>
-          <li id="onboarding-package"><span>4</span><strong>Package</strong><small>JSON + Markdown</small></li>
+          <li id="onboarding-simulation"><span>3</span><strong>Simulate</strong><small>Revision-bound evidence</small></li>
+          <li id="onboarding-quotes"><span>4</span><strong>Compare</strong><small>Two fictional suppliers</small></li>
+          <li id="onboarding-package"><span>5</span><strong>Package</strong><small>JSON + Markdown</small></li>
         </ol>
         <a class="button-link" href="#agent-console-title">Start with the agent-ready tools</a>
       </section>
@@ -208,6 +219,89 @@ function renderDesign() {
         <p class="authority-note">These are human-only controls. No WebMCP tool can approve, reject, or commit geometry.</p>
       </section>
       ${renderAgentConsole()}
+    </div>
+  `
+}
+
+function renderSimulation() {
+  return `
+    <div class="page">
+      ${pageIntro(
+        'Static stress simulation',
+        'Prepare one bounded, revision-locked force study.',
+        'The agent may prepare and explain the study. Only the visible engineer controls can approve CAD sharing and start provider work.',
+        '<div class="part-chip"><span>Active snapshot</span><strong id="fea-snapshot-key"></strong></div>',
+      )}
+      <section class="source-card fea-mode-card" aria-labelledby="fea-mode-title">
+        <div>
+          <p class="eyebrow">Provider boundary</p>
+          <h2 id="fea-mode-title">Checking FEA service</h2>
+          <p id="fea-mode-detail">Loading provider capabilities…</p>
+        </div>
+        <span class="stage-status" id="fea-mode-badge">checking</span>
+      </section>
+      <section class="fea-layout">
+        <form class="proposal-card fea-study-form" id="fea-study-form">
+          <div class="proposal-heading">
+            <div><p class="eyebrow">Controlled study</p><h2>Linear-static force setup</h2></div>
+            <span>Draft only</span>
+          </div>
+          <p class="authority-note">The material and named selections are frozen by the versioned FEA contract. The existing radius preview is not part of exported CAD until Onshape itself changes.</p>
+          <div class="fea-fields">
+            <label>Force <span><input id="fea-force" type="number" min="0.001" max="100000" step="0.001" value="441" required /> N</span></label>
+            <label>Direction X <input id="fea-direction-x" type="number" step="0.1" value="0" required /></label>
+            <label>Direction Y <input id="fea-direction-y" type="number" step="0.1" value="-1" required /></label>
+            <label>Direction Z <input id="fea-direction-z" type="number" step="0.1" value="0" required /></label>
+            <label>Mesh preset <select id="fea-mesh"><option value="medium">Medium</option><option value="fine">Fine</option></select></label>
+            <label>Minimum safety factor <input id="fea-safety-factor" type="number" min="1" max="10" step="0.1" value="2" required /></label>
+            <label>Maximum displacement <span><input id="fea-displacement" type="number" min="0.001" max="1000" step="0.001" value="1" required /> mm</span></label>
+          </div>
+          <button type="submit">Prepare validated study</button>
+        </form>
+        <section class="proposal-card fea-review-card" aria-labelledby="fea-review-title">
+          <div class="proposal-heading">
+            <div><p class="eyebrow">Frozen manifest</p><h2 id="fea-review-title">No study prepared</h2></div>
+            <span id="fea-study-state">not started</span>
+          </div>
+          <dl class="agent-metrics fea-study-metrics">
+            <div><dt>Study</dt><dd id="fea-study-id">—</dd></div>
+            <div><dt>Snapshot</dt><dd id="fea-study-snapshot">—</dd></div>
+            <div><dt>Hash</dt><dd id="fea-study-hash">—</dd></div>
+            <div><dt>Currentness</dt><dd id="fea-study-currentness">—</dd></div>
+          </dl>
+          <div class="fea-consent" id="fea-consent" hidden>
+            <label><input type="checkbox" id="fea-cad-consent" /> I approve sending this exact CAD snapshot to the configured provider.</label>
+            <label><input type="checkbox" id="fea-compute-consent" /> I approve the disclosed compute use.</label>
+            <button type="button" id="fea-approve-run">Approve and run</button>
+            <p class="authority-note">Human-only operation. It is intentionally absent from WebMCP.</p>
+          </div>
+          <div class="proposal-actions">
+            <button type="button" class="secondary-button" id="fea-refresh-status" disabled>Refresh status</button>
+            <button type="button" class="secondary-button" id="fea-load-results" disabled>Load results</button>
+          </div>
+        </section>
+      </section>
+      <section class="agent-console" aria-labelledby="fea-evidence-title">
+        <div class="agent-console-heading">
+          <div><p class="eyebrow">Visible solver evidence</p><h2 id="fea-evidence-title">Result not available</h2></div>
+          <span class="registration-badge" id="fea-verification-badge">not verified</span>
+        </div>
+        <dl class="agent-metrics fea-result-metrics">
+          <div><dt>Provider</dt><dd id="fea-result-provider">—</dd></div>
+          <div><dt>Reviewed stress</dt><dd id="fea-result-stress">—</dd></div>
+          <div><dt>Displacement</dt><dd id="fea-result-displacement">—</dd></div>
+          <div><dt>Assessment</dt><dd id="fea-result-assessment">—</dd></div>
+        </dl>
+        <p class="authority-note" id="fea-result-limitations">No solver evidence has been loaded.</p>
+        <div class="manual-tool-controls" aria-label="Manual FEA WebMCP fallback controls">
+          <button type="button" data-fea-tool="prepare_static_stress_study">Prepare default study</button>
+          <button type="button" class="secondary-button" data-fea-tool="get_static_stress_study">Read study</button>
+          <button type="button" class="secondary-button" data-fea-tool="get_simulation_status">Check status</button>
+          <button type="button" class="secondary-button" data-fea-tool="get_simulation_results">Read results</button>
+          <button type="button" class="secondary-button" data-fea-tool="compare_simulation_to_requirements">Compare requirements</button>
+        </div>
+        <output class="tool-output" id="fea-tool-output" aria-live="polite">No FEA tool output yet.</output>
+      </section>
     </div>
   `
 }
@@ -506,11 +600,12 @@ function updateDiagnostics() {
   const completedStages = [
     workflowState.inspectionStatus === 'complete',
     ['approved', 'rejected'].includes(workflowState.decisionStatus),
+    feaState.study?.lifecycleState === 'COMPLETE' && feaState.study.currentness === 'CURRENT',
     workflowState.supplierQuotes.length === 2,
     Boolean(workflowState.reviewPackage),
   ]
-  workflowProgress.textContent = `${completedStages.filter(Boolean).length}/4 complete`
-  ;['inspection', 'decision', 'quotes', 'package'].forEach((stage, index) => {
+  workflowProgress.textContent = `${completedStages.filter(Boolean).length}/5 complete`
+  ;['inspection', 'decision', 'simulation', 'quotes', 'package'].forEach((stage, index) => {
     document.querySelector(`#onboarding-${stage}`)?.classList.toggle('complete', completedStages[index])
   })
 
@@ -623,6 +718,145 @@ function synchronizeDesignWorkspace() {
   renderViewerSelection()
 }
 
+function synchronizeSimulationWorkspace() {
+  const snapshot = document.querySelector('#fea-snapshot-key')
+  if (!snapshot) return
+
+  snapshot.textContent = activeSnapshotKey()
+  const capabilities = feaState.capabilities
+  const modeTitle = document.querySelector('#fea-mode-title')
+  const modeDetail = document.querySelector('#fea-mode-detail')
+  const modeBadge = document.querySelector('#fea-mode-badge')
+  if (capabilities) {
+    modeTitle.textContent = capabilities.live
+      ? `${capabilities.provider} live provider`
+      : `${capabilities.provider} validation mode`
+    modeDetail.textContent = capabilities.note
+    modeBadge.textContent = capabilities.live ? 'live' : capabilities.provider
+    modeBadge.dataset.status = capabilities.live ? 'ready' : 'planned'
+  } else if (feaState.lastError) {
+    modeTitle.textContent = 'FEA service unavailable'
+    modeDetail.textContent = feaState.lastError.message
+    modeBadge.textContent = 'unavailable'
+    modeBadge.dataset.status = 'failed'
+  }
+
+  const study = feaState.study
+  document.querySelector('#fea-review-title').textContent = study ? 'Validated study manifest' : 'No study prepared'
+  document.querySelector('#fea-study-state').textContent = study?.lifecycleState?.toLowerCase() ?? 'not started'
+  document.querySelector('#fea-study-id').textContent = study?.studyId ?? '—'
+  document.querySelector('#fea-study-snapshot').textContent = study?.snapshotKey ?? '—'
+  document.querySelector('#fea-study-hash').textContent = study?.studyHash ?? '—'
+  document.querySelector('#fea-study-currentness').textContent = study?.currentness?.toLowerCase() ?? '—'
+
+  const consent = document.querySelector('#fea-consent')
+  consent.hidden = !study || Boolean(study.approval) || study.currentness !== 'CURRENT'
+  document.querySelector('#fea-approve-run').disabled = !study || Boolean(study.approval) || study.currentness !== 'CURRENT'
+  document.querySelector('#fea-refresh-status').disabled = !study?.approval
+  document.querySelector('#fea-load-results').disabled = study?.lifecycleState !== 'COMPLETE'
+
+  const result = feaState.result
+  document.querySelector('#fea-evidence-title').textContent = result ? 'Normalized simulation result' : 'Result not available'
+  const verificationBadge = document.querySelector('#fea-verification-badge')
+  verificationBadge.textContent = result?.verification?.status ?? 'not verified'
+  verificationBadge.dataset.status = result?.solver?.live === true ? 'ready' : 'planned'
+  document.querySelector('#fea-result-provider').textContent = result
+    ? `${result.solver.provider}${result.solver.live ? ' (live)' : ' (recorded)'}`
+    : '—'
+  const stress = result?.metrics?.reviewedRegionVonMisesStress
+  document.querySelector('#fea-result-stress').textContent = stress ? `${stress.value} ${stress.unit}` : '—'
+  const displacement = result?.metrics?.maximumDisplacement
+  document.querySelector('#fea-result-displacement').textContent = displacement ? `${displacement.value} ${displacement.unit}` : '—'
+  document.querySelector('#fea-result-assessment').textContent = result?.assessment?.outcome ?? '—'
+  document.querySelector('#fea-result-limitations').textContent = result?.assessment?.limitations?.join(' ') ?? 'No solver evidence has been loaded.'
+}
+
+function defaultFeaToolInput(toolName) {
+  return toolName === 'prepare_static_stress_study'
+    ? {
+      forceN: 441,
+      direction: [0, -1, 0],
+      meshPreset: 'medium',
+      minimumSafetyFactor: 2,
+      maximumDisplacementMm: 1,
+    }
+    : {}
+}
+
+function bindSimulationControls() {
+  document.querySelector('#fea-study-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const output = document.querySelector('#fea-tool-output')
+    try {
+      const result = await prepareStaticStressStudy({
+        forceN: Number(document.querySelector('#fea-force').value),
+        direction: [
+          Number(document.querySelector('#fea-direction-x').value),
+          Number(document.querySelector('#fea-direction-y').value),
+          Number(document.querySelector('#fea-direction-z').value),
+        ],
+        meshPreset: document.querySelector('#fea-mesh').value,
+        minimumSafetyFactor: Number(document.querySelector('#fea-safety-factor').value),
+        maximumDisplacementMm: Number(document.querySelector('#fea-displacement').value),
+      })
+      output.textContent = JSON.stringify(result, null, 2)
+    } catch (error) {
+      output.textContent = JSON.stringify(toolErrorEnvelope(error), null, 2)
+    }
+    synchronizeSimulationWorkspace()
+  })
+
+  document.querySelector('#fea-approve-run')?.addEventListener('click', async () => {
+    const output = document.querySelector('#fea-tool-output')
+    try {
+      const result = await approveAndSubmitHuman({
+        cadSharingAcknowledged: document.querySelector('#fea-cad-consent').checked,
+        computeAcknowledged: document.querySelector('#fea-compute-consent').checked,
+      })
+      output.textContent = JSON.stringify(result, null, 2)
+    } catch (error) {
+      output.textContent = JSON.stringify(toolErrorEnvelope(error), null, 2)
+    }
+    synchronizeSimulationWorkspace()
+  })
+
+  document.querySelector('#fea-refresh-status')?.addEventListener('click', async () => {
+    const output = document.querySelector('#fea-tool-output')
+    try {
+      output.textContent = JSON.stringify(await readSimulationStatus({}), null, 2)
+    } catch (error) {
+      output.textContent = JSON.stringify(toolErrorEnvelope(error), null, 2)
+    }
+    synchronizeSimulationWorkspace()
+  })
+
+  document.querySelector('#fea-load-results')?.addEventListener('click', async () => {
+    const output = document.querySelector('#fea-tool-output')
+    try {
+      output.textContent = JSON.stringify(await readSimulationResults({}), null, 2)
+    } catch (error) {
+      output.textContent = JSON.stringify(toolErrorEnvelope(error), null, 2)
+    }
+    synchronizeSimulationWorkspace()
+  })
+
+  document.querySelectorAll('[data-fea-tool]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const output = document.querySelector('#fea-tool-output')
+      button.disabled = true
+      try {
+        const result = await executeGate7Tool(button.dataset.feaTool, defaultFeaToolInput(button.dataset.feaTool))
+        output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+      } catch (error) {
+        output.textContent = JSON.stringify(toolErrorEnvelope(error), null, 2)
+      } finally {
+        button.disabled = false
+        synchronizeSimulationWorkspace()
+      }
+    })
+  })
+}
+
 function bindDesignSourceControls() {
   document.querySelector('#load-onshape-source')?.addEventListener('click', async () => {
     const button = document.querySelector('#load-onshape-source')
@@ -661,6 +895,7 @@ function bindDesignSourceControls() {
       || Boolean(workflowState.proposedChange)
       || workflowState.supplierQuotes.length > 0
       || Boolean(workflowState.reviewPackage)
+      || Boolean(feaState.study)
     if (derivedEvidenceExists
       && !window.confirm('Activate the checked Onshape revision and discard evidence from the current revision?')) {
       return
@@ -682,6 +917,7 @@ function bindDesignSourceControls() {
       || Boolean(workflowState.proposedChange)
       || workflowState.supplierQuotes.length > 0
       || Boolean(workflowState.reviewPackage)
+      || Boolean(feaState.study)
     if (derivedEvidenceExists
       && !window.confirm('Restore the fixture and discard evidence from the active Onshape revision?')) {
       return
@@ -714,6 +950,7 @@ function bindWorkflowControls() {
   })
   document.querySelector('#reset-demo-button')?.addEventListener('click', () => {
     resetDemoState()
+    resetFeaState()
     bracketViewer?.resetCamera()
     const output = document.querySelector('#tool-output')
     if (output) output.textContent = 'Demo reset to the original BRKT-001-B fixture.'
@@ -782,6 +1019,10 @@ async function renderRoute() {
 
   const render = routes[path] ?? renderNotFound
 
+  if (path === '/simulation') {
+    await initializeFea().catch(() => {})
+  }
+
   try {
     bracketViewer?.destroy()
     bracketViewer = null
@@ -811,6 +1052,10 @@ async function renderRoute() {
     bindDesignSourceControls()
     synchronizeDesignWorkspace()
   }
+  if (path === '/simulation') {
+    bindSimulationControls()
+    synchronizeSimulationWorkspace()
+  }
   bindManualToolControls()
   bindWorkflowControls()
   updateDiagnostics()
@@ -839,9 +1084,14 @@ window.addEventListener('buildready:navigate', (event) => {
 })
 window.addEventListener('buildready:statechange', updateDiagnostics)
 window.addEventListener('buildready:statechange', synchronizeDesignWorkspace)
+window.addEventListener('buildready:feachange', () => {
+  updateDiagnostics()
+  synchronizeSimulationWorkspace()
+})
 
 globalResetButton.addEventListener('click', () => {
   resetDemoState()
+  resetFeaState()
   window.history.pushState({}, '', '/design')
   void renderRoute()
 })

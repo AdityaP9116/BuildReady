@@ -295,7 +295,7 @@ nav {
 
 .onboarding-steps {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.45rem;
   margin: 0;
   padding: 0;
@@ -720,6 +720,89 @@ h1 {
 
 .proposal-card[hidden] {
   display: none;
+}
+
+.fea-mode-card {
+  margin-bottom: 0;
+}
+
+.fea-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.fea-layout .proposal-card {
+  min-width: 0;
+}
+
+.fea-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 1.25rem 0;
+}
+
+.fea-fields label,
+.fea-consent label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.fea-fields input,
+.fea-fields select {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  color: var(--text);
+  background: var(--bg);
+  font: inherit;
+}
+
+.fea-fields label > span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fea-consent {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--amber);
+  border-radius: 0.65rem;
+  background: rgb(255 198 109 / 6%);
+}
+
+.fea-consent[hidden] {
+  display: none;
+}
+
+.fea-consent label {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.fea-consent input {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+  accent-color: var(--mint);
+}
+
+.fea-study-metrics,
+.fea-result-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .proposal-heading {
@@ -1362,6 +1445,7 @@ h1 {
   }
 
   .workspace-grid,
+  .fea-layout,
   .principles-grid,
   .supplier-grid,
   .review-summary-grid,
@@ -1395,6 +1479,10 @@ h1 {
   .audit-download-section {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .onboarding-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1441,6 +1529,12 @@ h1 {
 
   .onboarding-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fea-fields,
+  .fea-study-metrics,
+  .fea-result-metrics {
+    grid-template-columns: 1fr;
   }
 
   .review-quote-list {

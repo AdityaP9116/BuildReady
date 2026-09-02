@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKED_SUFFIXES = {".css", ".html", ".js", ".json", ".md", ".mjs", ".py", ".toml", ".yml"}
-IGNORED_PARTS = {".git", ".venv", "dist", "node_modules"}
+IGNORED_PARTS = {".git", ".runtime", ".venv", "dist", "node_modules"}
 IGNORED_FILES = {".devpost-hackathon-state.json"}
 
 
@@ -61,6 +61,8 @@ def main() -> None:
         cwd=ROOT,
         check=True,
     )
+    for script in ("app.js", "webmcp.js", "fea-state.js", "fea-client.js", "fea-validation.js"):
+        subprocess.run(["node", "--check", str(ROOT / "web" / script)], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

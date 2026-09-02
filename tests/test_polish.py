@@ -33,8 +33,14 @@ class ProductPolishTests(unittest.TestCase):
         self.assertIn("resetDemoState()", self.app)
         self.assertIn("window.history.pushState({}, '', '/design')", self.app)
 
-    def test_onboarding_explains_the_complete_four_stage_path(self) -> None:
-        for stage in ("onboarding-inspection", "onboarding-decision", "onboarding-quotes", "onboarding-package"):
+    def test_onboarding_explains_the_complete_five_stage_path(self) -> None:
+        for stage in (
+            "onboarding-inspection",
+            "onboarding-decision",
+            "onboarding-simulation",
+            "onboarding-quotes",
+            "onboarding-package",
+        ):
             self.assertIn(stage, self.app)
         self.assertIn("Guided challenge path", self.app)
         self.assertIn("completedStages.filter(Boolean)", self.app)

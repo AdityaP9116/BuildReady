@@ -1,5 +1,6 @@
 import { activeDesign, activeDesignSource, gate7Handlers, setRegistrationState, workflowState } from './state.js'
 import { PROPOSAL_POLICY } from './domain.js'
+import { feaHandlers, feaState } from './fea-state.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
 /** @typedef {{ name: string, title: string, description: string, inputSchema: object, annotations: object, execute: Function }} WebMcpTool */
@@ -227,7 +228,109 @@ const reviewPackageTool = Object.freeze({
   execute: gate7Handlers.generate_review_package,
 })
 
+const prepareStaticStressStudyTool = Object.freeze({
+  name: 'prepare_static_stress_study',
+  title: 'Prepare static stress study',
+  description: 'Validate and freeze a revision-bound linear-static force study. This creates a local draft only; it cannot approve CAD sharing, spend compute, or submit provider work.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      forceN: {
+        type: 'number',
+        exclusiveMinimum: 0,
+        maximum: 100000,
+        description: 'Total applied force magnitude in newtons.',
+      },
+      direction: {
+        type: 'array',
+        items: { type: 'number', minimum: -1, maximum: 1 },
+        minItems: 3,
+        maxItems: 3,
+        description: 'Normalized XYZ force direction vector.',
+      },
+      meshPreset: {
+        type: 'string',
+        enum: ['medium', 'fine'],
+        description: 'Versioned second-order mesh preset.',
+      },
+      minimumSafetyFactor: {
+        type: 'number',
+        minimum: 1,
+        maximum: 10,
+        description: 'Required minimum factor of safety.',
+      },
+      maximumDisplacementMm: {
+        type: 'number',
+        exclusiveMinimum: 0,
+        maximum: 1000,
+        description: 'Allowed maximum displacement in millimeters.',
+      },
+    },
+    required: ['forceN', 'direction', 'meshPreset', 'minimumSafetyFactor', 'maximumDisplacementMm'],
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: false,
+    untrustedContentHint: sourceIsExternal(),
+  },
+  execute: feaHandlers.prepare_static_stress_study,
+})
+
+function emptyFeaTool(name, title, description, execute) {
+  return Object.freeze({
+    name,
+    title,
+    description,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      untrustedContentHint: true,
+    },
+    execute,
+  })
+}
+
+const getStaticStressStudyTool = emptyFeaTool(
+  'get_static_stress_study',
+  'Get static stress study',
+  'Read the frozen manifest, lifecycle, currentness, and human-approval state for the active study.',
+  feaHandlers.get_static_stress_study,
+)
+const getSimulationStatusTool = emptyFeaTool(
+  'get_simulation_status',
+  'Get simulation status',
+  'Read provider job status after the visible human approval has submitted the exact frozen study.',
+  feaHandlers.get_simulation_status,
+)
+const getSimulationResultsTool = emptyFeaTool(
+  'get_simulation_results',
+  'Get simulation results',
+  'Read normalized solver evidence, verification state, metrics, limitations, and provider provenance for a completed study.',
+  feaHandlers.get_simulation_results,
+)
+const compareSimulationRequirementsTool = emptyFeaTool(
+  'compare_simulation_to_requirements',
+  'Compare simulation to requirements',
+  'Compare loaded evidence with the frozen safety-factor and displacement requirements. Recorded or unverified evidence returns unknown, never pass or fail.',
+  feaHandlers.compare_simulation_to_requirements,
+)
+
+function simulationTools() {
+  const tools = []
+  if (feaState.capabilities?.provider !== 'disabled') tools.push(prepareStaticStressStudyTool)
+  if (feaState.study) tools.push(getStaticStressStudyTool)
+  if (feaState.study?.approval) tools.push(getSimulationStatusTool)
+  if (feaState.study?.lifecycleState === 'COMPLETE') tools.push(getSimulationResultsTool)
+  if (feaState.result) tools.push(compareSimulationRequirementsTool)
+  return Object.freeze(tools)
+}
+
 export function gate7Tools(route = '/design') {
+  if (route === '/simulation') return simulationTools()
   if (route === '/suppliers') {
     return workflowState.supplierQuotes.length === 2 && !workflowState.reviewPackage
       ? Object.freeze([reviewPackageTool])

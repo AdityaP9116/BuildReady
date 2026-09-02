@@ -56,7 +56,7 @@ class BuildTests(unittest.TestCase):
     def test_javascript_defines_every_planned_route(self) -> None:
         javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
-        for route in ("/design", "/suppliers", "/review", "/about"):
+        for route in ("/design", "/simulation", "/suppliers", "/review", "/about"):
             self.assertIn(f"'{route}'", javascript)
 
     def test_gate_five_webmcp_contracts_are_present(self) -> None:

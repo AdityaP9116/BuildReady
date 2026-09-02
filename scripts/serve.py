@@ -37,6 +37,7 @@ SECURITY_HEADERS = {
 ONSHAPE_ENDPOINT = "/api/onshape/design"
 FEA_CAPABILITIES_ENDPOINT = "/api/fea/capabilities"
 FEA_STUDIES_ENDPOINT = "/api/fea/studies"
+FEA_CURRENT_SNAPSHOT_ENDPOINT = "/api/fea/current-snapshot"
 FEA_STUDY_PATTERN = re.compile(
     r"^/api/fea/studies/(?P<study_id>study-[a-f0-9]{16})(?:/(?P<action>approve-and-submit|status|results))?$"
 )
@@ -352,6 +353,27 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
             if request_path == FEA_STUDIES_ENDPOINT:
                 response = local_fea_service().create_study(payload)
                 self.send_json(201 if response["created"] else 200, response)
+                return
+
+            if request_path == FEA_CURRENT_SNAPSHOT_ENDPOINT:
+                if set(payload) != {"snapshotKey"}:
+                    raise FeaServiceError(
+                        "FEA_INVALID_REQUEST", "Expected exactly one snapshotKey."
+                    )
+                snapshot_key = payload["snapshotKey"]
+                if (
+                    not isinstance(snapshot_key, str)
+                    or not 1 <= len(snapshot_key) <= 240
+                    or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:/@-" for character in snapshot_key)
+                ):
+                    raise FeaServiceError(
+                        "FEA_INVALID_REQUEST", "The active snapshot key is invalid."
+                    )
+                stale_count = local_fea_service().mark_snapshot_current(snapshot_key)
+                self.send_json(
+                    200,
+                    {"ok": True, "snapshotKey": snapshot_key, "staleStudyCount": stale_count},
+                )
                 return
 
             fea_match = FEA_STUDY_PATTERN.fullmatch(request_path)
