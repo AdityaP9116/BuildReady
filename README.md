@@ -227,6 +227,8 @@ uv run python scripts/simscale_probe.py
 
 The probe makes one authenticated read-only v1 request and omits keys, project names, and project IDs from its output. The remaining manual account, template, CAD-import, and numerical verification checklist is in `docs/simscale-setup.md`. `SIMULATION_PROVIDER=simscale` continues to fail closed until that evidence exists.
 
+The credential-free live transport boundary is implemented in `scripts/onshape_export.py` and `scripts/simscale_transport.py`. It is mock-verified but intentionally not wired to the approval endpoint yet: the SimScale account, manual baseline, saved-selection behavior, result resources, and numerical verification must pass Gate FEA-0 first. This distinction prevents a tested HTTP client from being mistaken for a verified stress solver.
+
 ### Controlled rule set
 
 The machine-readable fixture and rule definitions live in `web/cnc-domain.json`. Rule set `cnc-demo-1.0.0` intentionally freezes challenge-specific assumptions so identical fixture input produces identical findings. These thresholds are demonstration data, not production machining guidance.

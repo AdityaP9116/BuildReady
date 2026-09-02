@@ -6,6 +6,20 @@
 >
 > **Primary scope:** One-part, linear-static structural stress analysis using an exact Onshape Part Studio revision, SimScale as the solver, DatumFlow as the control and evidence layer, ChatGPT as the WebMCP agent, and a human engineer as the approval authority.
 
+## Implementation status (2026-09-02)
+
+| Gate | Implemented evidence | Remaining exit condition |
+| --- | --- | --- |
+| FEA-0 | Read-only, secret-safe account probe and setup checklist | Real API key/account check, manual baseline, supported result resources, and analytical cantilever verification |
+| FEA-1 | Exact-microversion STEP export plus SimScale storage/upload/import/topology/selection clients; mock contract tests | Execute against the approved accounts and transfer one real frozen demo revision |
+| FEA-2 | Versioned bounded material/load/mesh/selection manifest and deterministic validator | Capture and freeze the account's current, manually verified SimScale static-analysis payload and prove named-selection mapping |
+| FEA-3 | Durable local study/approval records, human-only visible consent, idempotent recorded submission, stale-revision handling | Move live records to the selected authenticated database/object-storage deployment |
+| FEA-4 | Recorded asynchronous state machine and browser reload behavior | Create, read back, start, and monitor a real SimScale run |
+| FEA-5 | Immutable hashed recorded result, deterministic unknown outcome, state-scoped WebMCP tools, and review-package propagation | Retrieve and normalize verified live numeric results and deep links |
+| FEA-6 | Labeled recorded fallback, automated tests, browser walkthrough, and submission documentation | Re-run the full hardening suite after the live provider is enabled |
+
+No new remote partner commit or branch was present when GitHub was fetched on 2026-09-02; the earlier partner `v1` commit is already incorporated. The plan therefore keeps the established Onshape foundation and advances the SimScale boundary without inventing remote changes.
+
 ## 1. Outcome
 
 DatumFlow will let an engineer load a supported Onshape design, define a static structural test, review the complete setup, explicitly approve sending the design to SimScale, monitor the asynchronous run, and inspect a traceable result summary. ChatGPT can use DatumFlow's WebMCP tools to gather context, prepare the study, check progress, explain the results, and recommend next steps. ChatGPT cannot approve the study, certify the design, or modify the authoritative CAD model.
@@ -671,6 +685,8 @@ No OpenAI API key is required for the direct ChatGPT + WebMCP experience. ChatGP
 **Exit check:** a known-good Onshape geometry and SimScale static run exist; the automated interface exposes every required input and output; the cantilever meets the numerical acceptance thresholds. Until then, live mode remains disabled and no result is described as verified.
 
 ### Gate FEA-1 — Prove CAD transport
+
+**Implementation note (2026-09-02):** the exact-microversion Onshape translation/download client and the SimScale temporary-storage, presigned upload, CAD-import polling, topology, and saved-selection clients are implemented with strict mock contract tests. Runtime wiring and the live exit check remain blocked by FEA-0; no CAD was sent externally.
 
 - Refactor shared Onshape request logic without changing the existing design endpoint.
 - Implement exact-microversion STEP export.

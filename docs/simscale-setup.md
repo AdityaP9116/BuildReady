@@ -2,6 +2,16 @@
 
 Live SimScale work remains disabled until the account, manual template, CAD import, and numerical verification gates pass. The repository currently provides a safe preflight plus the fully labeled recorded workflow; it does not claim a verified live run.
 
+Current implementation status:
+
+- Recorded provider: complete for the human-gated orchestration demo.
+- Read-only account probe: implemented in `scripts/simscale_probe.py`.
+- Exact-microversion Onshape STEP client: implemented and mock-verified in `scripts/onshape_export.py`.
+- SimScale storage, presigned upload, CAD import, topology, and saved-selection client: implemented and mock-verified in `scripts/simscale_transport.py`.
+- Live SimScale provider: deliberately disconnected until every verification item below passes.
+
+The two transport clients establish the security and API boundary only; they are not proof that a real stress study is correct.
+
 ## 1. Confirm account capability
 
 In SimScale, confirm that the target project allows API access and that the account has enough compute allowance for the planned verification runs. Create an API key from the account API Keys screen. SimScale documents that the v1 API uses the `X-API-KEY` header and that project API access is an explicit setting.
