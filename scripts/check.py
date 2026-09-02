@@ -52,7 +52,12 @@ def main() -> None:
 
     print(f"Checked {len(checked_files())} project files")
     subprocess.run(
-        ["node", "--test", str(ROOT / "tests" / "js" / "onshape-function-contract.mjs")],
+        [
+            "node",
+            "--test",
+            str(ROOT / "tests" / "js" / "onshape-function-contract.mjs"),
+            str(ROOT / "tests" / "js" / "fea-validation.mjs"),
+        ],
         cwd=ROOT,
         check=True,
     )

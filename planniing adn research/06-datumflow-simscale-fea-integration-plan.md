@@ -1,7 +1,9 @@
 # DatumFlow — SimScale FEA Stress-Simulation Integration Plan
 
-> **Status:** Approved implementation plan; credential-free gates may proceed while live SimScale remains blocked on Gate FEA-0 account verification  
-> **Product naming:** DatumFlow is the intended product name; the current repository and code still use BuildReady. Renaming the codebase is not required to implement this integration.  
+> **Status:** Approved implementation plan; credential-free gates may proceed while live SimScale remains blocked on Gate FEA-0 account verification
+>
+> **Product naming:** DatumFlow is the intended product name; the current repository and code still use BuildReady. Renaming the codebase is not required to implement this integration.
+>
 > **Primary scope:** One-part, linear-static structural stress analysis using an exact Onshape Part Studio revision, SimScale as the solver, DatumFlow as the control and evidence layer, ChatGPT as the WebMCP agent, and a human engineer as the approval authority.
 
 ## 1. Outcome
