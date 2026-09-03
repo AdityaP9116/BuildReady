@@ -46,6 +46,7 @@ class SubmissionPacketTests(unittest.TestCase):
     def test_supporting_packet_is_complete(self) -> None:
         required = {
             "DEMO_SCRIPT.md",
+            "DEMO_SCRIPT_ONSHAPE.md",
             "TESTING.md",
             "CHALLENGE_WORK.md",
             "ATTRIBUTION.md",
