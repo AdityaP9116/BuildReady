@@ -20,10 +20,12 @@ import sqlite3
 import time
 
 try:
+    from scripts.live_evidence import build_live_evidence, validate_evidence
     from scripts.live_demo_preparation import PreparationStore, encoded, fingerprint
     from scripts.simscale_transport import SimScaleTransportClient, SimScaleTransportError, CadImportReceipt, SIMSCALE_API_ORIGIN
     from scripts.simscale_probe import load_dotenv
 except ModuleNotFoundError:
+    from live_evidence import build_live_evidence, validate_evidence
     from live_demo_preparation import PreparationStore, encoded, fingerprint
     from simscale_transport import SimScaleTransportClient, SimScaleTransportError, CadImportReceipt, SIMSCALE_API_ORIGIN
     from simscale_probe import load_dotenv
@@ -151,6 +153,10 @@ class LiveJournal:
             db.execute('CREATE TABLE IF NOT EXISTS live_writes (key TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL, stage TEXT NOT NULL, state TEXT NOT NULL, result TEXT)')
             db.execute('CREATE TABLE IF NOT EXISTS live_run_specs (run_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL, simulation_id TEXT NOT NULL, spec_json TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS live_result_files (result_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, run_id TEXT NOT NULL, digest TEXT NOT NULL, size INTEGER NOT NULL)')
+            db.execute('''CREATE TABLE IF NOT EXISTS live_evidence_records (
+                evidence_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL,
+                project TEXT NOT NULL, run_id TEXT NOT NULL, content_hash TEXT NOT NULL,
+                content_json TEXT NOT NULL, created REAL NOT NULL)''')
 
     def once(self, stage, payload, operation):
         key = fingerprint({'preparation': self.preparation_id, 'project': self.project_id, 'stage': stage, 'payload': payload})
@@ -197,6 +203,42 @@ class LiveJournal:
     def summary(self):
         with self.store.connect() as db:
             return [dict(r) for r in db.execute('SELECT stage,state FROM live_writes WHERE preparation_id=? AND project=? ORDER BY rowid', (self.preparation_id, self.project_id))]
+
+    def retain_evidence(self, record):
+        validate_evidence(record)
+        content = encoded(record)
+        content_hash = 'sha256-' + hashlib.sha256(content.encode('utf-8')).hexdigest()
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM live_evidence_records WHERE evidence_id=?', (record['evidenceId'],)).fetchone()
+            if row:
+                require(row['preparation_id'] == self.preparation_id and row['project'] == self.project_id
+                        and row['run_id'] == record['result']['runId'] and row['content_hash'] == content_hash,
+                        'Simulation evidence identity was rebound or changed; retained evidence is immutable.')
+                return json.loads(row['content_json'])
+            prior = db.execute('SELECT evidence_id FROM live_evidence_records WHERE preparation_id=? AND project=? AND run_id=?',
+                               (self.preparation_id, self.project_id, record['result']['runId'])).fetchone()
+            require(prior is None, 'This provider run already has a different retained evidence record; explicit reconciliation is required.')
+            db.execute('INSERT INTO live_evidence_records VALUES (?, ?, ?, ?, ?, ?, ?)',
+                       (record['evidenceId'], self.preparation_id, self.project_id, record['result']['runId'], content_hash, content, self.clock()))
+        return record
+
+    def evidence(self):
+        with self.store.connect() as db:
+            rows = db.execute('SELECT content_json FROM live_evidence_records WHERE preparation_id=? AND project=? ORDER BY created,evidence_id',
+                              (self.preparation_id, self.project_id)).fetchall()
+            preparation = db.execute('SELECT state,expires FROM preparations WHERE id=?', (self.preparation_id,)).fetchone()
+        expired = preparation is None or preparation['state'] == 'EXPIRED' or preparation['expires'] <= self.clock()
+        records = []
+        for row in rows:
+            record = json.loads(row['content_json'])
+            if expired:
+                # Retained content remains immutable. Availability/currentness
+                # are a read-time view over the preparation retention state.
+                record['currentness'] = 'EXPIRED'
+                record['retention']['artifactsAvailable'] = False
+            records.append(validate_evidence(record))
+        return records
 
 
 class LiveWorkflow:
@@ -350,11 +392,14 @@ class LiveWorkflow:
             resources.append({'resultId': choice['resultId'], 'sha256': content_hash, 'columns': choice['columns'], 'unit': choice['unit']})
         force = self.draft['load']['totalForceN']
         metrics['reactionBalanceErrorPercent'] = 100 * math.sqrt(sum((a+b)**2 for a,b in zip(force, metrics['reactionForceN']))) / math.sqrt(sum(a*a for a in force))
-        return {'provider':'simscale', 'sourceKind':'authorized_api', 'simulationId':simulation, 'runId':run,
-                'setupHash':self.draft['setupHash'], 'stepSha256':self.draft['stepSha256'],
-                'runSpecHash':'sha256-'+fingerprint(writable), 'resources':resources, 'metrics':metrics,
-                'columnReview':selection['reviewer'], 'engineeringVerified':False,
-                'note':'Actual provider CSV metrics with human-reviewed columns/units. Raw CSV is retained privately until the CAD preparation expires. No benchmark, reviewed-region stress, or mesh-convergence approval is implied.'}
+        with self.store.connect() as db:
+            retained = db.execute('SELECT expires FROM preparations WHERE id=?', (self.identity,)).fetchone()
+        require(retained is not None, 'The CAD preparation retention record is missing.')
+        evidence = build_live_evidence(
+            preparation_id=self.identity, draft=self.draft, project_id=self.client.project_id,
+            simulation_id=simulation, run_id=run, run_spec_hash='sha256-'+fingerprint(writable),
+            resources=resources, metrics=metrics, reviewer=selection['reviewer'], expires_at=retained['expires'])
+        return self.journal.retain_evidence(evidence)
 
     def cancel(self, kind, identity, simulation=None):
         identity = self.client._uuid(identity, kind)
@@ -376,7 +421,7 @@ class LiveWorkflow:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['status','import','topology','advance','cancel','results'])
+    parser.add_argument('action', choices=['status','evidence','import','topology','advance','cancel','results'])
     parser.add_argument('--preparation', required=True)
     parser.add_argument('--approval', type=Path)
     parser.add_argument('--mapping', type=Path)
@@ -387,12 +432,13 @@ def main():
     args = parser.parse_args()
     load_dotenv()
     client = LiveClient(api_key=os.environ.get('SIMSCALE_API_KEY',''), project_id=os.environ.get('SIMSCALE_PROJECT_ID',''))
-    workflow = LiveWorkflow(PreparationStore(), args.preparation, client, require_cad=args.action not in {'status','cancel'})
+    workflow = LiveWorkflow(PreparationStore(), args.preparation, client, require_cad=args.action not in {'status','cancel','evidence'})
     def read(path):
         require(path is not None and path.stat().st_size <= 65536, 'Supply a bounded local approval/mapping JSON file.')
         return json.loads(path.read_text(encoding='utf-8'))
     if args.action == 'status':
-        result = {'operations': workflow.journal.summary(), 'engineeringVerified': False}
+        result = {'operations': workflow.journal.summary(), 'evidenceCount': len(workflow.journal.evidence()), 'engineeringVerified': False}
+    elif args.action == 'evidence': result = {'records': workflow.journal.evidence()}
     elif args.action == 'import': result = workflow.import_cad(read(args.approval))
     elif args.action == 'topology': result = workflow.topology()
     elif args.action == 'advance': result = workflow.advance(read(args.mapping), read(args.approval), args.level)

@@ -1,5 +1,7 @@
 # Unfinished work — 2026-09-03 push checkpoint
 
+Update: the canonical simulation-evidence contract and private live-result persistence are implemented. Live SimScale results still need application/WebMCP activation, job reconciliation, numerical benchmark/convergence checks and engineering review before they can unlock downstream workflow claims.
+
 **This is an in-progress implementation, not a verified full live demo.** Local regression tests and synthetic-provider tests do not establish account-backed engineering correctness. No live SimScale import, mesh or solve was performed for this checkpoint.
 
 ## Code still to finish

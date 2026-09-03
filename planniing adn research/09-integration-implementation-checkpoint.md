@@ -2,6 +2,12 @@
 
 Scope: local implementation checkpoint of document 08, prepared for the user's requested GitHub push. Not a live SimScale, production-security, numerical-verification or genuine-quotation completion claim.
 
+## 2026-09-03 continuation: canonical simulation evidence (coding gate 1)
+
+The recorded demonstration and operator-assisted SimScale lane now use the `buildready-simulation-evidence-2.0.0` schema family. A captured live record binds the immutable Onshape document, version, microversion, element, part and default configuration to the retained STEP and geometry digests, reviewed setup digest, provider project/simulation/run identifiers, exact result-resource digests and normalized metrics. It receives stable evidence/result hashes and is written immutably to the private preparation database. Repeating the same capture is idempotent; attempting to bind the same run to different evidence stops for reconciliation.
+
+Raw SimScale CSV files remain in private seven-day storage and are never placed in browser state or Git. After preparation expiry, the immutable metadata remains available as an audit record while the retrieval view reports `EXPIRED` and `artifactsAvailable: false`. Column review and engineering verification are deliberately separate: real provider data starts at `engineeringVerification: pending`, so this checkpoint does not claim numerical correctness, convergence, a passed design or live-demo completion. The CLI can retrieve retained evidence without requiring expired CAD bytes, and its status reports the evidence count. No provider call was made for this checkpoint.
+
 ## Latest checkpoint: private quotations and provider foundations
 
 ### Operator implementation push — 2026-09-03

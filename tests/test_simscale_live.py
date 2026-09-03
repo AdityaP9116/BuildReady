@@ -97,14 +97,27 @@ class LiveTests(unittest.TestCase):
                      'displacement':{'resultId':uid(11),'columns':['max'],'unit':'m'},
                      'reactions':{'resultId':uid(12),'columns':['x','y','z'],'unit':'N'}}
         result = self.flow.capture_metrics(uid(4),uid(5),selection)
-        self.assertEqual(2,result['metrics']['maximumVonMisesMpa'])
-        self.assertEqual(.2,result['metrics']['maximumDisplacementMm'])
-        self.assertEqual(0,result['metrics']['reactionBalanceErrorPercent'])
-        self.assertFalse(result['engineeringVerified'])
-        for resource in result['resources']:
+        self.assertEqual('buildready-simulation-evidence-2.0.0',result['schemaVersion'])
+        self.assertEqual('live',result['evidenceMode'])
+        self.assertEqual('pending',result['review']['engineeringVerification'])
+        self.assertEqual(2,result['result']['metrics']['maximumVonMisesMpa'])
+        self.assertEqual(.2,result['result']['metrics']['maximumDisplacementMm'])
+        self.assertEqual(0,result['result']['metrics']['reactionBalanceErrorPercent'])
+        self.assertEqual([result], self.flow.journal.evidence())
+        for resource in result['result']['resources']:
             self.assertTrue(self.store.path(self.identity,'result.'+resource['resultId']+'.csv').is_file())
+        self.assertEqual(result, self.flow.capture_metrics(uid(4),uid(5),selection))
         self.client.spec['model']['boundaryConditions'][1]['force']['value']['z']['value'] = -200
         with self.assertRaisesRegex(ValueError,'specification'): self.flow.capture_metrics(uid(4),uid(5),selection)
+        with self.store.connect() as db:
+            immutable_content = db.execute('SELECT content_json FROM live_evidence_records').fetchone()['content_json']
+        self.now += 8*86400
+        self.store.cleanup()
+        expired = self.flow.journal.evidence()[0]
+        self.assertEqual('EXPIRED', expired['currentness'])
+        self.assertFalse(expired['retention']['artifactsAvailable'])
+        with self.store.connect() as db:
+            self.assertEqual(immutable_content, db.execute('SELECT content_json FROM live_evidence_records').fetchone()['content_json'])
 
     def test_approval_mapping_estimate_and_warning_fail_closed(self):
         for changes in ({'maxSpendUsd':1},{'expiresAt':self.now},{'projectId':'987'},{'transferAcknowledged':False}):

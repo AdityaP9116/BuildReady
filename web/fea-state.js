@@ -9,6 +9,7 @@ import {
 } from './state.js?v=20260903-2'
 import { FEA_DOMAIN } from './fea-domain.js?v=20260903-2'
 import { validateStaticStressStudy } from './fea-validation.js?v=20260903-2'
+import { createRecordedSimulationEvidence } from './live-evidence.js?v=20260903-3'
 import {
   approveFeaStudy,
   getFeaCapabilities,
@@ -60,18 +61,12 @@ function publishSimulationEvidence() {
     return
   }
   const result = feaState.result
-  setSimulationEvidence(Object.freeze({
-    schemaVersion: 'workflow-fea-evidence-1.0.0',
-    studyId: study.studyId,
-    studyHash: study.studyHash,
-    snapshotKey: study.snapshotKey,
-    lifecycleState: study.lifecycleState,
-    currentness: effectiveCurrentness(study),
-    provider: feaState.capabilities?.provider ?? 'unknown',
+  setSimulationEvidence(createRecordedSimulationEvidence({
+    study,
+    result,
+    provider: feaState.capabilities?.provider ?? 'recorded-local',
     live: feaState.capabilities?.live === true,
-    approvedAt: study.approvedAt,
-    manifest: clone(study.manifest),
-    result: clone(result),
+    currentness: effectiveCurrentness(study),
   }))
 }
 
