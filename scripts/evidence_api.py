@@ -108,7 +108,29 @@ def dispatch(handler, method: str, path: str) -> bool:
         service = SourcingService(store)
         parts = path.removeprefix('/api/private/').split('/')
         result, status = None, 200
-        if parts == ['live-demo']:
+        if parts in (['live-evidence'], ['live-verification']) and method == 'GET':
+            with store.connect() as db:
+                store.authorize(db, principal, scope)
+            if principal.owner != 'local-operator':
+                raise EvidenceError('OPERATOR_REQUIRED', 'Only the local operator can read commissioning evidence.', 403)
+            try:
+                from scripts.live_demo_preparation import PreparationStore
+                from scripts.simscale_live import LiveJournal
+            except ModuleNotFoundError:
+                from live_demo_preparation import PreparationStore
+                from simscale_live import LiveJournal
+            import re
+            identity = query.get('preparation', [''])[0]
+            if not re.fullmatch(r'[0-9a-f]{64}', identity):
+                raise EvidenceError('INVALID_PREPARATION', 'A complete preparation identifier is required.')
+            result = LiveJournal(PreparationStore(), identity, os.environ.get('SIMSCALE_PROJECT_ID', '')).evidence()
+            if parts == ['live-verification']:
+                try:
+                    from scripts.simulation_verification import readiness
+                except ModuleNotFoundError:
+                    from simulation_verification import readiness
+                result = readiness(result)
+        elif parts == ['live-demo']:
             # Local operator-only commissioning surface, never an unattended tool.
             with store.connect() as db:
                 store.authorize(db, principal, scope)
@@ -187,12 +209,14 @@ def dispatch(handler, method: str, path: str) -> bool:
                 result = store.artifact(principal, scope, parts[1])
         elif parts == ['requests'] and method == 'POST':
             result, status = service.prepare_request(principal, scope, json_body(handler)), 201
+        elif parts == ['suppliers'] and method == 'POST':
+            result, status = service.save_supplier(principal, scope, json_body(handler)), 201
         elif parts == ['quotes'] and method == 'POST':
             result, status = service.quote_draft(principal, scope, json_body(handler)), 201
         elif parts == ['comparisons'] and method == 'POST':
             result, status = service.compare(principal, scope, json_body(handler)), 201
-        elif len(parts) == 1 and parts[0] in {'requests', 'quotes', 'comparisons'} and method == 'GET':
-            kind = {'requests': 'rfq', 'quotes': 'quote', 'comparisons': 'comparison'}[parts[0]]
+        elif len(parts) == 1 and parts[0] in {'requests', 'quotes', 'comparisons', 'suppliers'} and method == 'GET':
+            kind = {'requests': 'rfq', 'quotes': 'quote', 'comparisons': 'comparison', 'suppliers': 'supplier'}[parts[0]]
             result = store.list_records(principal, scope, kind, after=query.get('after', [''])[0], limit=int(query.get('limit', ['25'])[0]))
         elif len(parts) == 2 and parts[0] == 'records' and method == 'GET':
             version = int(query['version'][0]) if 'version' in query else None

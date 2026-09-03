@@ -2,6 +2,14 @@
 
 Scope: local implementation checkpoint of document 08, prepared for the user's requested GitHub push. Not a live SimScale, production-security, numerical-verification or genuine-quotation completion claim.
 
+## Further continuation: gates 6–7 read-side integration
+
+The latest [remaining-gates handoff](../docs/remaining-gates-handoff.md) records the preferred-supplier directory, local retention command, verification steps and all remaining coding/account acceptance gaps. It supersedes older progress statements below; not all gates are complete.
+
+The main Simulation page now loads authenticated retained live evidence for an explicitly selected part, checks the full active document/element/microversion and default configuration, and exposes it through `get_live_simulation_evidence`, active design context and JSON export. Expiry and source freshness are evaluated when the evidence is read. This is a separate live-evidence view: it does not populate the recorded-demo solver or grant production approval. Full combined commercial/engineering package integration remains open.
+
+A server-side numerical-readiness report calculates reaction balance and adjacent-mesh displacement changes only for three distinct, current, consistently bound live runs. Analytical benchmark, manual parity, reviewed-region stress and engineering review remain unknown until actual evidence is available. Global peak stress is not substituted for reviewed-region convergence. Gates 6 and 7 are therefore advanced, not fully accepted.
+
 ## 2026-09-03 continuation: canonical simulation evidence (coding gate 1)
 
 The recorded demonstration and operator-assisted SimScale lane now use the `buildready-simulation-evidence-2.0.0` schema family. A captured live record binds the immutable Onshape document, version, microversion, element, part and default configuration to the retained STEP and geometry digests, reviewed setup digest, provider project/simulation/run identifiers, exact result-resource digests and normalized metrics. It receives stable evidence/result hashes and is written immutably to the private preparation database. Repeating the same capture is idempotent; attempting to bind the same run to different evidence stops for reconciliation.

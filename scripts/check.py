@@ -59,6 +59,7 @@ def main() -> None:
             str(ROOT / "tests" / "js" / "fea-validation.mjs"),
             str(ROOT / "tests" / "js" / "source-foundation.mjs"),
             str(ROOT / "tests" / "js" / "fea-state-foundation.mjs"),
+            str(ROOT / "tests" / "js" / "live-simulation.mjs"),
         ],
         cwd=ROOT,
         check=True,

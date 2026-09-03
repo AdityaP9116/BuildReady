@@ -41,6 +41,7 @@ import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-2
 import { CNC_RULES, PROPOSAL_POLICY } from './domain.js?v=20260903-2'
 import { fictionalQuotePreview } from './quote-engine.js?v=20260903-2'
 import { mountManufacturingReview, persistManufacturingReview, restoreManufacturingReview } from './manufacturing-review.js?v=20260903-3'
+import { mountLiveSimulation } from './live-simulation.js'
 
 const routes = {
   '/': renderDesign,
@@ -321,6 +322,7 @@ function renderSimulation() {
       </section>
       <aside class="compatibility-note"><strong>Real SimScale operator workflow</strong><span>The controls below remain the recorded demonstration. Use the separate <a href="/live-demo.html">live commissioning workspace</a> for frozen STEP import, reviewed topology, bounded mesh/solve execution, cancellation and actual CSV metrics. Live numerical acceptance is still required.</span></aside>
       <section class="fea-layout">
+        <section id="live-simulation-evidence" class="proposal-card"></section>
         <form class="proposal-card fea-study-form" id="fea-study-form">
           <div class="proposal-heading">
             <div><p class="eyebrow">Controlled study</p><h2>Linear-static force setup</h2></div>
@@ -1093,6 +1095,7 @@ function defaultFeaToolInput(toolName) {
 }
 
 function bindSimulationControls() {
+  mountLiveSimulation(document.querySelector('#live-simulation-evidence'))
   document.querySelector('#fea-study-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
     const output = document.querySelector('#fea-tool-output')

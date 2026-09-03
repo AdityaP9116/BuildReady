@@ -356,12 +356,13 @@ class LiveJournal:
 
     def evidence(self):
         with self.store.connect() as db:
-            rows = db.execute('SELECT content_json FROM live_evidence_records WHERE preparation_id=? AND project=? ORDER BY created,evidence_id',
+            rows = db.execute('SELECT content_json,content_hash FROM live_evidence_records WHERE preparation_id=? AND project=? ORDER BY created,evidence_id',
                               (self.preparation_id, self.project_id)).fetchall()
             preparation = db.execute('SELECT state,expires FROM preparations WHERE id=?', (self.preparation_id,)).fetchone()
         expired = preparation is None or preparation['state'] == 'EXPIRED' or preparation['expires'] <= self.clock()
         records = []
         for row in rows:
+            require(row['content_hash'] == 'sha256-'+hashlib.sha256(row['content_json'].encode()).hexdigest(), 'Retained simulation evidence failed its integrity check.')
             record = json.loads(row['content_json'])
             if expired:
                 # Retained content remains immutable. Availability/currentness

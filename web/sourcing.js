@@ -11,7 +11,7 @@ const registered = []
 
 function output(value) { $('#output').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
 function invalidateApproval() { approval = null; $('#approval').hidden = true; $('#approval-ack').checked = false }
-function scopeChanged() { generation += 1; selectedRequest = null; lastReport = null; invalidateApproval(); $('#download-report').disabled = true }
+function scopeChanged() { generation += 1; selectedRequest = null; lastReport = null; invalidateApproval(); $('#download-report').disabled = true; $('#supplier-form').reset(); $('#supplier-directory').replaceChildren() }
 function field(parent, name, label, type = 'text') {
   const wrapper = document.createElement('label')
   wrapper.textContent = label
@@ -82,6 +82,34 @@ async function refreshProjects() {
 async function refresh() {
   if (!workspace) return
   const [requests, quotes, artifacts] = await Promise.all([api('requests'), api('quotes'), api('artifacts')])
+  const suppliers = []
+  let after = ''
+  for (;;) {
+    const page = await api(`suppliers?limit=100&after=${encodeURIComponent(after)}`)
+    suppliers.push(...page)
+    if (page.length < 100) break
+    after = page.at(-1).id
+  }
+  $('#supplier-directory').replaceChildren()
+  for (const record of suppliers) {
+    const row = document.createElement('div')
+    row.textContent = `${record.content.name} · ${record.state} · v${record.version} `
+    const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Edit'
+    edit.addEventListener('click', () => {
+      const form = $('#supplier-form')
+      for (const key of ['name', 'contact', 'website']) form.elements[key].value = record.content[key] ?? ''
+      form.elements.supplierId.value = record.id; form.elements.expectedVersion.value = record.version
+      form.elements.active.checked = record.state === 'active'
+    })
+    const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Use in transcription'; use.disabled = record.state !== 'active'
+    use.addEventListener('click', () => {
+      $('#quote-form').elements.supplierIdentity.value = record.id
+      $('#quote-form').elements.supplierName.value = record.content.name
+      $('#quote-form').elements.independence.checked = false
+      output('Supplier copied into the draft. Check identity and source terms independently; nothing was sent.')
+    })
+    row.append(edit, use); $('#supplier-directory').append(row)
+  }
   const selectedId = selectedRequest?.id
   $('#requests').replaceChildren(new Option('Choose a request', ''))
   for (const record of requests) $('#requests').add(new Option(`${record.state} · version ${record.version} · ${record.id}`, record.id))
@@ -113,6 +141,14 @@ async function refresh() {
   }
   registerTools()
 }
+bind('#supplier-form', 'submit', async () => {
+  const v = formObject('#supplier-form')
+  const result = await api('suppliers', {method: 'POST', body: {
+    supplierId: v.supplierId || null, expectedVersion: v.expectedVersion ? Number(v.expectedVersion) : null,
+    name: v.name, contact: v.contact || null, website: v.website || null, active: v.active === 'on',
+  }})
+  $('#supplier-form').reset(); await refresh(); output(result)
+})
 bind('#unlock', 'submit', async () => {
   const result = await api('session', { method: 'POST', body: formObject('#unlock'), scoped: false })
   csrf = result.csrfToken; $('#unlock').reset(); $('#private-content').hidden = false; $('#lock').hidden = false
