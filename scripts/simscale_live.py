@@ -21,11 +21,13 @@ import time
 
 try:
     from scripts.live_evidence import build_live_evidence, validate_evidence
+    from scripts.job_lifecycle import lifecycle
     from scripts.live_demo_preparation import PreparationStore, encoded, fingerprint
     from scripts.simscale_transport import SimScaleTransportClient, SimScaleTransportError, CadImportReceipt, SIMSCALE_API_ORIGIN
     from scripts.simscale_probe import load_dotenv
 except ModuleNotFoundError:
     from live_evidence import build_live_evidence, validate_evidence
+    from job_lifecycle import lifecycle
     from live_demo_preparation import PreparationStore, encoded, fingerprint
     from simscale_transport import SimScaleTransportClient, SimScaleTransportError, CadImportReceipt, SIMSCALE_API_ORIGIN
     from simscale_probe import load_dotenv
@@ -153,6 +155,16 @@ class LiveJournal:
         self.store, self.preparation_id, self.project_id, self.clock = store, preparation_id, project_id, clock
         with store.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS live_writes (key TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL, stage TEXT NOT NULL, state TEXT NOT NULL, result TEXT)')
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(live_writes)')}
+            for name, definition in (
+                ('request_hash', 'TEXT'), ('request_json', 'TEXT'), ('created', 'REAL'),
+                ('updated', 'REAL'), ('attempt_count', 'INTEGER NOT NULL DEFAULT 1'),
+            ):
+                if name not in columns:
+                    db.execute(f'ALTER TABLE live_writes ADD COLUMN {name} {definition}')
+            # Older records remain usable. Their request JSON is intentionally
+            # unknown rather than reconstructed after the external action.
+            db.execute("UPDATE live_writes SET request_hash=COALESCE(request_hash,'sha256-'||key), created=COALESCE(created,0), updated=COALESCE(updated,0), attempt_count=COALESCE(attempt_count,1)")
             db.execute('CREATE TABLE IF NOT EXISTS live_run_specs (run_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL, simulation_id TEXT NOT NULL, spec_json TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS live_result_files (result_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, run_id TEXT NOT NULL, digest TEXT NOT NULL, size INTEGER NOT NULL)')
             db.execute('''CREATE TABLE IF NOT EXISTS live_evidence_records (
@@ -169,18 +181,25 @@ class LiveJournal:
 
     def once(self, stage, payload, operation):
         key = fingerprint({'preparation': self.preparation_id, 'project': self.project_id, 'stage': stage, 'payload': payload})
+        request_hash, request_json, now = 'sha256-'+fingerprint(payload), encoded(payload), self.clock()
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             prior = db.execute('SELECT key FROM live_writes WHERE preparation_id=? AND project=? AND stage=?', (self.preparation_id, self.project_id, stage)).fetchone()
             require(prior is None or prior['key'] == key, 'This operation slot is already bound to different inputs. No additional compute was scheduled.')
             row = db.execute('SELECT * FROM live_writes WHERE key=?', (key,)).fetchone()
             if row:
+                require(row['request_hash'] == request_hash and (row['request_json'] is None or row['request_json'] == request_json), 'The durable operation request no longer matches its frozen inputs.')
                 require(row['state'] == 'COMPLETE', 'An external write is uncertain. Reconcile in SimScale; do not resubmit.')
                 return json.loads(row['result'])
-            db.execute('INSERT INTO live_writes VALUES (?, ?, ?, ?, ?, NULL)', (key, self.preparation_id, self.project_id, stage, 'WRITE_UNCERTAIN'))
+            db.execute('''INSERT INTO live_writes
+                (key,preparation_id,project,stage,state,result,request_hash,request_json,created,updated,attempt_count)
+                VALUES (?, ?, ?, ?, 'WRITE_UNCERTAIN', NULL, ?, ?, ?, ?, 1)''',
+                (key, self.preparation_id, self.project_id, stage, request_hash, request_json, now, now))
         result = operation()
         with self.store.connect() as db:
-            db.execute('UPDATE live_writes SET state=?,result=? WHERE key=?', ('COMPLETE', encoded(result), key))
+            updated = db.execute("UPDATE live_writes SET state='COMPLETE',result=?,updated=? WHERE key=? AND state='WRITE_UNCERTAIN'",
+                                 (encoded(result), self.clock(), key))
+            require(updated.rowcount == 1, 'The durable operation changed while its provider write was in progress.')
         return result
 
     def completed_import(self):
@@ -243,7 +262,21 @@ class LiveJournal:
 
     def summary(self):
         with self.store.connect() as db:
-            return [dict(r) for r in db.execute('SELECT stage,state FROM live_writes WHERE preparation_id=? AND project=? ORDER BY rowid', (self.preparation_id, self.project_id))]
+            rows = db.execute('''SELECT key,stage,state,request_hash,created,updated,attempt_count,result
+                FROM live_writes WHERE preparation_id=? AND project=? ORDER BY rowid''',
+                (self.preparation_id, self.project_id)).fetchall()
+        output = []
+        for row in rows:
+            result = json.loads(row['result']) if row['result'] else None
+            remote = {key: value for key, value in (result or {}).items()
+                      if key in {'storage_id','cad_id','cad_state_id','meshOperationId','simulationId','runId'} and isinstance(value, str)}
+            output.append({
+                'jobId': 'live-'+row['key'][:16], 'stage': row['stage'],
+                'requestHash': row['request_hash'], **lifecycle(row['state']),
+                'attemptCount': row['attempt_count'], 'createdAt': row['created'],
+                'updatedAt': row['updated'], 'remote': remote,
+            })
+        return output
 
     def retain_evidence(self, record):
         validate_evidence(record)

@@ -150,11 +150,18 @@ class LiveTests(unittest.TestCase):
             self.assertTrue(started.wait(timeout=3))
             with self.assertRaisesRegex(ValueError,'uncertain'): journal.once('test',{'input':1},Mock())
             release.set(); self.assertEqual({'accepted':True},first.result())
+        completed = journal.summary()[0]
+        self.assertTrue(completed['terminal']); self.assertFalse(completed['reconciliationRequired'])
+        self.assertEqual(1, completed['attemptCount']); self.assertRegex(completed['requestHash'], r'^sha256-[0-9a-f]{64}$')
         with self.assertRaisesRegex(ValueError,'different inputs'): journal.once('test',{'input':2},Mock())
         call = Mock(side_effect=TimeoutError())
         with self.assertRaises(TimeoutError): journal.once('timeout',{},call)
         with self.assertRaises(ValueError): journal.once('timeout',{},call)
         call.assert_called_once()
+        uncertain = journal.summary()[-1]
+        self.assertTrue(uncertain['reconciliationRequired']); self.assertFalse(uncertain['retrySafe'])
+        restarted = LiveJournal(self.store,self.identity,self.client.project_id,clock=lambda:self.now)
+        self.assertEqual(uncertain, restarted.summary()[-1])
 
     def test_cancel_is_scoped_and_available_after_cad_expiry(self):
         with self.assertRaises(ValueError): self.flow.cancel('mesh',uid(99))
@@ -177,6 +184,20 @@ class LiveTests(unittest.TestCase):
         self.assertIn('page=2',client._api_json.call_args.args[1])
         client._api_json = Mock(return_value={'embedded':[]})
         with self.assertRaises(ValueError): client.collection('/v1/test')
+
+    def test_legacy_live_journal_migrates_without_inventing_request_content(self):
+        with self.store.connect() as db:
+            db.execute('DROP TABLE live_writes')
+            db.execute('CREATE TABLE live_writes (key TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL, stage TEXT NOT NULL, state TEXT NOT NULL, result TEXT)')
+            db.execute('INSERT INTO live_writes VALUES (?, ?, ?, ?, ?, ?)',
+                       ('a'*64, self.identity, self.client.project_id, 'legacy-complete', 'COMPLETE', '{"accepted":true}'))
+        migrated = LiveJournal(self.store,self.identity,self.client.project_id,clock=lambda:self.now).summary()[0]
+        self.assertEqual('sha256-'+'a'*64, migrated['requestHash'])
+        self.assertTrue(migrated['terminal'])
+        with self.store.connect() as db:
+            row = db.execute('SELECT request_json,attempt_count FROM live_writes').fetchone()
+        self.assertIsNone(row['request_json'])
+        self.assertEqual(1,row['attempt_count'])
 
     def test_retained_result_expiry_and_digest_are_enforced(self):
         journal = self.flow.journal

@@ -39,10 +39,12 @@ class ProviderJobTests(unittest.TestCase):
         job = self.jobs.create(self.principal,self.workspace,'simscale_import',{},'one')['id']
         lease = self.jobs.claim(self.principal,self.workspace,job)
         self.jobs.before_external_write(self.principal,self.workspace,job,lease,'import')
+        self.assertTrue(self.jobs.get(self.principal,self.workspace,job)['lifecycle']['reconciliationRequired'])
         self.now += 61
         self.assertEqual(1,self.jobs.recover()['uncertainWrites'])
         with self.assertRaises(EvidenceError): self.jobs.claim(self.principal,self.workspace,job)
         other = self.jobs.create(self.principal,self.workspace,'simscale_import',{},'two')['id']
         lease = self.jobs.claim(self.principal,self.workspace,other)
         self.jobs.receipt(self.principal,self.workspace,other,lease,{'cadId':'one'},complete=True,result={'ok':True})
+        self.assertTrue(self.jobs.get(self.principal,self.workspace,other)['lifecycle']['terminal'])
         with self.assertRaises(EvidenceError): self.jobs.receipt(self.principal,self.workspace,other,lease,{'cadId':'two'},complete=True,result={'ok':True})

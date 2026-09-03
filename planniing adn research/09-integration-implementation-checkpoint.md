@@ -16,6 +16,10 @@ Human-entered final-solid measurements now pass through an independently validat
 
 Reviewed SimScale topology mappings are now persisted before any mesh operation and made immutable per preparation/project/mesh level. When a run is created, its ID is durably bound to the exact mapping hash and content. Metric capture refuses a run without that binding, and the canonical evidence record now includes the provider project/simulation/run IDs plus the selected body, support and load entities, reviewer, geometry-parity acknowledgment and mesh level. Selection cardinality is derived from the reviewed Onshape setup instead of hard-coded four/two constants, though automatic arbitrary-part feature recognition remains unfinished. This closes the evidence-linkage portion of the topology gate, not the human mapping or real-provider validation portion.
 
+## 2026-09-03 continuation: unified provider-job lifecycle (coding gate 4)
+
+All generic provider jobs and active SimScale journal operations now share one lifecycle contract for ready, leased, waiting, write-uncertain, reconciliation-required and terminal states. The live journal migrates existing databases in place and durably saves the frozen request hash, bounded request JSON, creation/update timestamps and a single attempt count before every external write. Its safe status view exposes only lifecycle flags and allowlisted remote identifiers; it never exposes request bodies, credentials, signed URLs or provider messages. A process restart preserves completed work and leaves a possibly accepted write explicitly reconciliation-required and never retry-safe. Duplicate calls with the same inputs return the retained result, while changed inputs or uncertain writes remain blocked. This gate establishes durable lifecycle/restart behavior; provider-readback reconciliation of lost receipts is Gate 5 and remains unfinished.
+
 ## Latest checkpoint: private quotations and provider foundations
 
 ### Operator implementation push — 2026-09-03
