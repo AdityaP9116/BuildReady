@@ -73,7 +73,8 @@ def validate_evidence(record: dict[str, Any]) -> dict[str, Any]:
 def build_live_evidence(*, preparation_id: str, draft: dict[str, Any], project_id: str,
                         simulation_id: str, run_id: str, run_spec_hash: str,
                         resources: list[dict[str, Any]], metrics: dict[str, Any],
-                        reviewer: str, expires_at: float) -> dict[str, Any]:
+                        reviewer: str, topology_mapping: dict[str, Any],
+                        mapping_hash: str, mesh_level: int, expires_at: float) -> dict[str, Any]:
     source = draft["source"]
     portable_source = {
         "documentId": source["document_id"], "elementId": source["element_id"],
@@ -82,7 +83,7 @@ def build_live_evidence(*, preparation_id: str, draft: dict[str, Any], project_i
     }
     snapshot_key = ":".join(portable_source[key] for key in ("documentId", "microversionId", "elementId", "partId", "configuration"))
     result_body = {
-        "simulationId": simulation_id, "runId": run_id, "runSpecHash": run_spec_hash,
+        "projectId": project_id, "simulationId": simulation_id, "runId": run_id, "runSpecHash": run_spec_hash,
         "resources": resources, "metrics": metrics,
     }
     result = {**result_body, "resultHash": digest(result_body)}
@@ -110,6 +111,12 @@ def build_live_evidence(*, preparation_id: str, draft: dict[str, Any], project_i
             "setupHash": draft["setupHash"], "runSpecHash": run_spec_hash,
             "material": draft["material"], "support": draft["support"],
             "load": draft["load"], "assumptions": draft["assumptions"],
+            "topologyMapping": {
+                "mappingHash": mapping_hash, "meshLevel": mesh_level,
+                "body": topology_mapping["body"], "supports": topology_mapping["supports"],
+                "loads": topology_mapping["loads"], "reviewer": topology_mapping["reviewer"],
+                "geometryParityChecked": topology_mapping["geometryParityChecked"],
+            },
         },
         "result": result,
         "review": {"columnReview": reviewer.strip(), "engineeringVerification": "pending"},

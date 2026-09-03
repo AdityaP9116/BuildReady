@@ -100,6 +100,11 @@ class LiveTests(unittest.TestCase):
         self.assertEqual('buildready-simulation-evidence-2.0.0',result['schemaVersion'])
         self.assertEqual('live',result['evidenceMode'])
         self.assertEqual('pending',result['review']['engineeringVerification'])
+        topology = result['setup']['topologyMapping']
+        self.assertEqual(self.mapping['supports'], topology['supports'])
+        self.assertEqual(0, topology['meshLevel'])
+        self.assertTrue(topology['geometryParityChecked'])
+        self.assertEqual('123456', result['result']['projectId'])
         self.assertEqual(2,result['result']['metrics']['maximumVonMisesMpa'])
         self.assertEqual(.2,result['result']['metrics']['maximumDisplacementMm'])
         self.assertEqual(0,result['result']['metrics']['reactionBalanceErrorPercent'])
@@ -129,6 +134,8 @@ class LiveTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.flow.advance(self.mapping,self.approval,3)
         self.client.check = {'severity':'WARNING','entries':[]}
         with self.assertRaises(ValueError): self.flow.advance(self.mapping,self.approval,0)
+        with self.assertRaisesRegex(ValueError, 'different reviewed topology'):
+            self.flow.advance({**self.mapping, 'reviewer':'Different reviewer'},self.approval,0)
         self.client.check = {'severity':'SUCCESS','entries':[]}; self.client.estimate = {'computeResource':{'type':'CPU_HOURS','value':.1},'totalRunCount':1}
         with self.assertRaises(ValueError): self.flow.advance(self.mapping,self.approval,0)
         self.assertFalse(self.client.commands)

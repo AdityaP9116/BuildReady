@@ -81,7 +81,9 @@ def validate_mapping(mapping, topology, draft, receipt):
     require(mapping['geometryParityChecked'] is True and isinstance(mapping['reviewer'], str) and 0 < len(mapping['reviewer'].strip()) <= 100, 'Review imported units, shape, orientation and face selections before mapping.')
     inventory = {item['name']: item['class'] for item in topology}
     seen = set()
-    for key, count, kind in [('body', 1, 'body'), ('supports', 4, 'face'), ('loads', 2, 'face')]:
+    expected = {'body': 1, 'supports': len(draft['support']['onshapeFaces']), 'loads': len(draft['load']['onshapeFaces'])}
+    require(all(1 <= expected[key] <= 100 for key in expected), 'The reviewed setup has unsupported selection cardinality.')
+    for key, count, kind in [('body', expected['body'], 'body'), ('supports', expected['supports'], 'face'), ('loads', expected['loads'], 'face')]:
         values = mapping[key]
         require(isinstance(values, list) and len(values) == count and all(isinstance(v, str) for v in values), 'The controlled bracket mapping requires 1 body, 4 support faces and 2 load faces.')
         require(len(set(values)) == count and not seen.intersection(values), 'Selections overlap or contain duplicates.')
@@ -157,6 +159,13 @@ class LiveJournal:
                 evidence_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL,
                 project TEXT NOT NULL, run_id TEXT NOT NULL, content_hash TEXT NOT NULL,
                 content_json TEXT NOT NULL, created REAL NOT NULL)''')
+            db.execute('''CREATE TABLE IF NOT EXISTS live_topology_mappings (
+                preparation_id TEXT NOT NULL, project TEXT NOT NULL, level INTEGER NOT NULL,
+                mapping_hash TEXT NOT NULL, mapping_json TEXT NOT NULL,
+                PRIMARY KEY (preparation_id,project,level))''')
+            db.execute('''CREATE TABLE IF NOT EXISTS live_run_bindings (
+                run_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL,
+                level INTEGER NOT NULL, mapping_hash TEXT NOT NULL, mapping_json TEXT NOT NULL)''')
 
     def once(self, stage, payload, operation):
         key = fingerprint({'preparation': self.preparation_id, 'project': self.project_id, 'stage': stage, 'payload': payload})
@@ -199,6 +208,38 @@ class LiveJournal:
         with path.open('xb') as stream:
             stream.write(content); stream.flush(); os.fsync(stream.fileno())
         return content_hash
+
+    def retain_mapping(self, level, mapping):
+        content, mapping_hash = encoded(mapping), 'sha256-' + fingerprint(mapping)
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            prior = db.execute('SELECT * FROM live_topology_mappings WHERE preparation_id=? AND project=? AND level=?',
+                               (self.preparation_id, self.project_id, level)).fetchone()
+            if prior:
+                require(prior['mapping_hash'] == mapping_hash and prior['mapping_json'] == content,
+                        'This mesh level is already bound to a different reviewed topology mapping.')
+            else:
+                db.execute('INSERT INTO live_topology_mappings VALUES (?, ?, ?, ?, ?)',
+                           (self.preparation_id, self.project_id, level, mapping_hash, content))
+        return mapping_hash
+
+    def bind_run(self, run_id, level, mapping_hash, mapping):
+        content = encoded(mapping)
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            prior = db.execute('SELECT * FROM live_run_bindings WHERE run_id=?', (run_id,)).fetchone()
+            require(prior is None or (prior['preparation_id'] == self.preparation_id and prior['project'] == self.project_id
+                    and prior['level'] == level and prior['mapping_hash'] == mapping_hash and prior['mapping_json'] == content),
+                    'Run identity is already bound to another topology mapping.')
+            db.execute('INSERT OR IGNORE INTO live_run_bindings VALUES (?, ?, ?, ?, ?, ?)',
+                       (run_id, self.preparation_id, self.project_id, level, mapping_hash, content))
+
+    def mapping_for_run(self, run_id):
+        with self.store.connect() as db:
+            row = db.execute('SELECT level,mapping_hash,mapping_json FROM live_run_bindings WHERE run_id=? AND preparation_id=? AND project=?',
+                             (run_id, self.preparation_id, self.project_id)).fetchone()
+        require(row is not None, 'The run has no retained reviewed topology binding.')
+        return row['level'], row['mapping_hash'], json.loads(row['mapping_json'])
 
     def summary(self):
         with self.store.connect() as db:
@@ -303,6 +344,7 @@ class LiveWorkflow:
         receipt = self.journal.completed_import()
         topology = self.topology()['entities']
         validate_mapping(mapping, topology, self.draft, receipt)
+        mapping_hash = self.journal.retain_mapping(level, mapping)
         mesh_spec = {'name': f'BuildReady mesh level {level}', 'version': '10.0', 'cadId': receipt.cad_id, 'stateId': receipt.cad_state_id,
                      'model': {'type': 'SIMMETRIX_MESHING_SOLID', 'sizing': {'type': 'AUTOMATIC_V9', 'fineness': 3+level*2},
                                'numOfProcessors': 4, 'maxMeshingRunTime': {'value': 600, 'unit': 's'}}}
@@ -328,6 +370,7 @@ class LiveWorkflow:
             prior = db.execute('SELECT spec_json FROM live_run_specs WHERE run_id=?', (run,)).fetchone()
             require(prior is None or prior['spec_json'] == encoded(spec), 'Run identity was rebound to another setup.')
             db.execute('INSERT OR IGNORE INTO live_run_specs VALUES (?, ?, ?, ?, ?)', (run, self.identity, self.client.project_id, simulation, encoded(spec)))
+        self.journal.bind_run(run, level, mapping_hash, mapping)
         run_path = sim_path+'/runs/'+run
         state = self.client._api_json('GET', run_path)
         require(verify_readback(spec, self.client._api_json('GET', run_path+'/spec?simulationSpecSchemaVersion=34.0')), 'Frozen run does not match the reviewed simulation.')
@@ -395,10 +438,12 @@ class LiveWorkflow:
         with self.store.connect() as db:
             retained = db.execute('SELECT expires FROM preparations WHERE id=?', (self.identity,)).fetchone()
         require(retained is not None, 'The CAD preparation retention record is missing.')
+        mesh_level, mapping_hash, topology_mapping = self.journal.mapping_for_run(run)
         evidence = build_live_evidence(
             preparation_id=self.identity, draft=self.draft, project_id=self.client.project_id,
             simulation_id=simulation, run_id=run, run_spec_hash='sha256-'+fingerprint(writable),
-            resources=resources, metrics=metrics, reviewer=selection['reviewer'], expires_at=retained['expires'])
+            resources=resources, metrics=metrics, reviewer=selection['reviewer'], topology_mapping=topology_mapping,
+            mapping_hash=mapping_hash, mesh_level=mesh_level, expires_at=retained['expires'])
         return self.journal.retain_evidence(evidence)
 
     def cancel(self, kind, identity, simulation=None):

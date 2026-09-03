@@ -12,6 +12,10 @@ Raw SimScale CSV files remain in private seven-day storage and are never placed 
 
 Human-entered final-solid measurements now pass through an independently validated, same-origin local API and a private SQLite record. Each record is bound to the full Onshape source snapshot key, content-fingerprinted, immutable for that snapshot and retained for seven days. The browser restores only an exact current-revision match after Onshape loading; a new revision cannot inherit an old review. Invalid, partial, non-finite or unacknowledged measurements fail closed, and a conflicting overwrite requires explicit reconciliation rather than silent replacement. Restored records remain labeled human-entered and `productionApproved: false`; saving or restoring clears dependent inspection, decision, simulation, quotation and package state through the existing source replacement path.
 
+## 2026-09-03 continuation: topology-to-run binding (coding gate 3)
+
+Reviewed SimScale topology mappings are now persisted before any mesh operation and made immutable per preparation/project/mesh level. When a run is created, its ID is durably bound to the exact mapping hash and content. Metric capture refuses a run without that binding, and the canonical evidence record now includes the provider project/simulation/run IDs plus the selected body, support and load entities, reviewer, geometry-parity acknowledgment and mesh level. Selection cardinality is derived from the reviewed Onshape setup instead of hard-coded four/two constants, though automatic arbitrary-part feature recognition remains unfinished. This closes the evidence-linkage portion of the topology gate, not the human mapping or real-provider validation portion.
+
 ## Latest checkpoint: private quotations and provider foundations
 
 ### Operator implementation push — 2026-09-03
