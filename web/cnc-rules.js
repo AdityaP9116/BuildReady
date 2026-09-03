@@ -1,4 +1,4 @@
-import { CNC_RULES, RULE_SET_VERSION } from './domain.js?v=20260903-2'
+import { CNC_RULES, RULE_SET_VERSION } from './domain.js?v=20260903-3'
 
 export class RuleInputError extends Error {
   constructor(code, message, ruleId = null) {

@@ -6,9 +6,9 @@ import {
   recordToolCall,
   setSimulationEvidence,
   workflowState,
-} from './state.js?v=20260903-2'
-import { FEA_DOMAIN } from './fea-domain.js?v=20260903-2'
-import { validateStaticStressStudy } from './fea-validation.js?v=20260903-2'
+} from './state.js?v=20260903-3'
+import { FEA_DOMAIN } from './fea-domain.js?v=20260903-3'
+import { validateStaticStressStudy } from './fea-validation.js?v=20260903-3'
 import {
   approveFeaStudy,
   getFeaCapabilities,
@@ -17,7 +17,7 @@ import {
   getFeaStudy,
   postActiveFeaSnapshot,
   prepareFeaStudy,
-} from './fea-client.js?v=20260903-2'
+} from './fea-client.js?v=20260903-3'
 
 export const feaState = {
   capabilities: null,

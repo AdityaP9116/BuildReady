@@ -140,7 +140,7 @@ settings):
    - Action URL:
 
 ```text
-https://YOUR_HOST/onshape-panel?documentId={$documentId}&workspaceOrVersion={$workspaceOrVersion}&workspaceOrVersionId={$workspaceOrVersionId}&elementId={$elementId}&build=20260903-2
+https://YOUR_HOST/onshape-panel?documentId={$documentId}&workspaceOrVersion={$workspaceOrVersion}&workspaceOrVersionId={$workspaceOrVersionId}&elementId={$elementId}&build=20260903-3
 ```
 
 Onshape automatically adds default query parameters including `server`. The

@@ -24,11 +24,11 @@ globalThis.fetch = async (input) => {
   calls.push(url)
   return Response.json(payload)
 }
-const client = await import('../../web/onshape-client.js?v=20260903-2')
-const state = await import('../../web/state.js?v=20260903-2')
-const { mapOnshapeToDesign } = await import('../../web/onshape-adapter.js?v=20260903-2')
-const { evaluateCncManufacturability } = await import('../../web/cnc-rules.js?v=20260903-2')
-const { revisionPrecondition } = await import('../../web/workflow-rules.js?v=20260903-2')
+const client = await import('../../web/onshape-client.js?v=20260903-3')
+const state = await import('../../web/state.js?v=20260903-3')
+const { mapOnshapeToDesign } = await import('../../web/onshape-adapter.js?v=20260903-3')
+const { evaluateCncManufacturability } = await import('../../web/cnc-rules.js?v=20260903-3')
+const { revisionPrecondition } = await import('../../web/workflow-rules.js?v=20260903-3')
 
 function source(overrides = {}) {
   return {

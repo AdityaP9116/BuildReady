@@ -10,23 +10,23 @@ import {
   setOnshapeAvailability,
   workflowState,
   setActiveRoute,
-} from './state.js?v=20260903-2'
+} from './state.js?v=20260903-3'
 import {
   configureOnshapeExtensionContext,
   onshapeSourceAvailable,
-} from './onshape-client.js?v=20260903-2'
+} from './onshape-client.js?v=20260903-3'
 import {
   connectOnshapeExtension,
   parseOnshapeExtensionContext,
-} from './onshape-extension.js?v=20260903-2'
-import { mountBracketViewer } from './bracket-viewer.js?v=20260903-2'
+} from './onshape-extension.js?v=20260903-3'
+import { mountBracketViewer } from './bracket-viewer.js?v=20260903-3'
 import {
   executeGate7Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
-} from './webmcp.js?v=20260903-2'
-import { serializeReviewPackageMarkdown } from './review-package.js?v=20260903-2'
-import { toolErrorEnvelope } from './error-contract.js?v=20260903-2'
+} from './webmcp.js?v=20260903-3'
+import { serializeReviewPackageMarkdown } from './review-package.js?v=20260903-3'
+import { toolErrorEnvelope } from './error-contract.js?v=20260903-3'
 import {
   approveAndSubmitHuman,
   feaState,
@@ -35,9 +35,9 @@ import {
   readSimulationResults,
   readSimulationStatus,
   resetFeaState,
-} from './fea-state.js?v=20260903-2'
-import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-2'
-import { CNC_RULES, PROPOSAL_POLICY } from './domain.js?v=20260903-2'
+} from './fea-state.js?v=20260903-3'
+import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-3'
+import { CNC_RULES, PROPOSAL_POLICY } from './domain.js?v=20260903-3'
 
 const routes = {
   '/': renderDesign,
@@ -392,7 +392,7 @@ function renderOnshapePanel() {
         <div class="findings-heading"><div><h2 id="findings-title">Findings</h2><p>Ordered by severity. Select one to review its measurements.</p></div><span id="finding-count">Not run</span></div>
         <div class="findings-list" id="findings-list"><p class="findings-empty">Run the check to see issues found in this Part Studio.</p></div>
         <div class="finding-actions" aria-label="Selected finding actions">
-          <button type="button" class="secondary-button" id="issue-details-button" data-tool="get_issue_details" disabled>Explain selected finding</button>
+          <button type="button" class="secondary-button" id="issue-details-button" data-tool="get_issue_details" disabled>Explain in chat</button>
           <button type="button" class="secondary-button" id="preview-radius-button" data-tool="preview_radius_change" disabled>Preview radius change</button>
         </div>
       </section>
@@ -1234,12 +1234,13 @@ function renderModelInsightConversation() {
 async function submitInsightQuestion(question) {
   const input = document.querySelector('#insight-input')
   const normalizedQuestion = String(question ?? input?.value ?? '').trim()
-  if (!normalizedQuestion || modelInsight.busy) return
+  if (!normalizedQuestion || modelInsight.busy) return null
   if (input) input.value = ''
   const pending = modelInsight.ask(normalizedQuestion)
   renderModelInsightConversation()
-  await pending
+  const reply = await pending
   renderModelInsightConversation()
+  return reply
 }
 
 function bindModelInsightAssistant() {
@@ -1433,14 +1434,20 @@ function bindManualToolControls() {
         : `Calling ${toolName}…`
 
       try {
+        if (document.body.classList.contains('onshape-embedded') && toolName === 'get_issue_details') {
+          const reply = await submitInsightQuestion('Explain the selected finding')
+          if (output) output.textContent = reply
+            ? 'Explanation added to Ask BuildReady.'
+            : 'BuildReady is already answering another question. Try again when it finishes.'
+          if (reply) document.querySelector('#insight-transcript')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          return
+        }
         const result = await executeGate7Tool(toolName, input)
         if (output && document.body.classList.contains('onshape-embedded')) {
           if (toolName === 'inspect_cnc_manufacturability') {
             const high = workflowState.findings.filter((finding) => finding.severity === 'high').length
             const medium = workflowState.findings.filter((finding) => finding.severity === 'medium').length
             output.textContent = `Check complete: ${workflowState.findings.length} issues found (${high} high priority, ${medium} medium priority). ${workflowState.inspection.coverage.evaluatedRuleCount} of ${workflowState.inspection.coverage.availableRules} checks ran.`
-          } else if (toolName === 'get_issue_details') {
-            output.textContent = 'The selected finding is ready below. You can also ask BuildReady a follow-up question.'
           } else if (toolName === 'preview_radius_change') {
             output.textContent = 'Preview prepared. This is a review suggestion only; the Onshape model was not changed.'
           } else if (toolName === 'prepare_quote_comparison') {

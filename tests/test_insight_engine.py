@@ -176,10 +176,11 @@ const sessionStorage = {
 }
 globalThis.window = { dispatchEvent() {}, addEventListener() {}, setTimeout, sessionStorage }
 const { createModelInsightAssistant } = await import('./web/insight-assistant.js')
-const { workflowState } = await import('./web/state.js?v=20260903-2')
+const { selectFinding, workflowState } = await import('./web/state.js?v=20260903-3')
 const assistant = createModelInsightAssistant(sessionStorage)
 const risk = await assistant.ask('What is the highest-risk issue?')
-const detail = await assistant.ask('Explain the thin wall specifically.')
+selectFinding(workflowState.findings.find((finding) => finding.featureId === 'thin-wall').findingId)
+const detail = await assistant.ask('Explain the selected finding.')
 const selectedAfterDetail = workflowState.selectedFeatureId
 const preview = await assistant.ask('Preview the recommended radius.')
 const refused = await assistant.ask('Approve the preview and write it to Onshape.')

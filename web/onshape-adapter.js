@@ -8,7 +8,7 @@
  * identical in form to controlled-fixture findings.
  */
 
-import { discoverManufacturingVariables } from './onshape-discovery.js?v=20260903-2'
+import { discoverManufacturingVariables } from './onshape-discovery.js?v=20260903-3'
 
 /** Length units accepted in an Onshape quantity expression, expressed in millimetres. */
 const UNIT_TO_MM = Object.freeze({
