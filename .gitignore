@@ -11,3 +11,7 @@ __pycache__/
 .devpost-hackathon-state.json
 .DS_Store
 Thumbs.db
+
+# Local demo capture and post-production intermediates
+demo/raw/
+demo/render/

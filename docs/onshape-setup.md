@@ -149,6 +149,17 @@ ONSHAPE_ELEMENT_ID=…
 Then run `uv run --env-file .env python scripts/serve.py` and load the live
 model from `/design`. `uv` does not load `.env` unless `--env-file` is supplied.
 
+When the local server is exposed through an HTTPS tunnel for an embedded-panel
+test, explicitly allow that exact origin before starting it:
+
+```bash
+BUILDREADY_ALLOWED_ORIGINS=https://your-tunnel.example \
+uv run --env-file .env python scripts/serve.py
+```
+
+This is an exact, HTTPS-only allowlist. Do not use a wildcard or add an origin
+you do not control.
+
 ### Check for and activate a newer revision
 
 Once a live model is active, use **Check Onshape for updates** or call

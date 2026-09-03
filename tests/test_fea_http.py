@@ -56,6 +56,26 @@ class FeaHttpTests(unittest.TestCase):
                 self.assertEqual(403, self.request('GET', '/api/fea/capabilities', headers=headers)[0])
                 self.assertEqual(403, self.request('POST', '/api/fea/prepare', {}, headers)[0])
 
+    def test_explicit_https_tunnel_origin_is_allowed(self) -> None:
+        tunnel_origin = 'https://buildready-demo.example'
+        with patch.dict('os.environ', {'BUILDREADY_ALLOWED_ORIGINS': tunnel_origin}):
+            headers = {
+                'Host': 'buildready-demo.example',
+                'Origin': tunnel_origin,
+                'Sec-Fetch-Site': 'same-origin',
+            }
+            self.assertEqual(200, self.request('GET', '/api/fea/capabilities', headers=headers)[0])
+            # The request crosses the origin boundary, then reaches payload validation.
+            self.assertEqual(400, self.request('POST', '/api/fea/prepare', {}, headers=headers)[0])
+
+    def test_tunnel_origin_requires_exact_https_allowlist_match(self) -> None:
+        with patch.dict('os.environ', {'BUILDREADY_ALLOWED_ORIGINS': 'https://buildready-demo.example'}):
+            self.assertEqual(403, self.request(
+                'GET',
+                '/api/fea/capabilities',
+                headers={'Host': 'attacker.example', 'Origin': 'https://attacker.example'},
+            )[0])
+
     def test_prepare_boundary_and_scoped_invalidation(self) -> None:
         self.assertEqual(415, self.request('POST', '/api/fea/prepare', {}, {'Content-Type': 'text/plain'})[0])
         self.assertEqual(400, self.request('POST', '/api/fea/prepare', {})[0])

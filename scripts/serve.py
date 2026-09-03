@@ -93,6 +93,36 @@ def load_dotenv() -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
+def allowed_development_origins(server_port: int) -> set[str]:
+    """Return exact browser origins allowed to call the loopback dev API.
+
+    The local server is sometimes reached through a developer-owned HTTPS
+    tunnel so an Onshape iframe can load it.  Those origins must be opted in;
+    accepting arbitrary Host headers would weaken the DNS-rebinding boundary.
+    """
+    origins = {
+        f"http://127.0.0.1:{server_port}",
+        f"http://localhost:{server_port}",
+        f"http://[::1]:{server_port}",
+    }
+    for raw_origin in os.environ.get("BUILDREADY_ALLOWED_ORIGINS", "").split(","):
+        candidate = raw_origin.strip().rstrip("/")
+        if not candidate:
+            continue
+        parsed = urlsplit(candidate)
+        if (
+            parsed.scheme == "https"
+            and parsed.netloc
+            and not parsed.username
+            and not parsed.password
+            and not parsed.path
+            and not parsed.query
+            and not parsed.fragment
+        ):
+            origins.add(candidate)
+    return origins
+
+
 class FatalOnshapeError(RuntimeError):
     """An upstream condition no retry can fix."""
 
@@ -534,9 +564,10 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
     def validate_local_api_request(self) -> None:
         """Development-only boundary, not a substitute for hosted authentication."""
         host = self.headers.get('Host', '')
-        allowed = {f'{name}:{self.server.server_port}' for name in ('127.0.0.1', 'localhost', '[::1]')}
+        allowed_origins = allowed_development_origins(self.server.server_port)
+        allowed_hosts = {urlsplit(item).netloc for item in allowed_origins}
         origin = self.headers.get('Origin')
-        if (host not in allowed or (origin is not None and origin != f'http://{host}')
+        if (host not in allowed_hosts or (origin is not None and origin.rstrip('/') not in allowed_origins)
                 or self.headers.get('Sec-Fetch-Site') == 'cross-site'):
             raise FeaServiceError('LOCAL_API_ORIGIN_DENIED', 'This development API requires its local same-origin workspace.', 403)
 
