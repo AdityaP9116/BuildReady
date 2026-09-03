@@ -178,6 +178,9 @@ class LiveJournal:
             db.execute('''CREATE TABLE IF NOT EXISTS live_run_bindings (
                 run_id TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL,
                 level INTEGER NOT NULL, mapping_hash TEXT NOT NULL, mapping_json TEXT NOT NULL)''')
+            db.execute('''CREATE TABLE IF NOT EXISTS live_reconciliations (
+                job_key TEXT PRIMARY KEY, reviewer TEXT NOT NULL, evidence_hash TEXT NOT NULL,
+                evidence_json TEXT NOT NULL, created REAL NOT NULL)''')
 
     def once(self, stage, payload, operation):
         key = fingerprint({'preparation': self.preparation_id, 'project': self.project_id, 'stage': stage, 'payload': payload})
@@ -188,7 +191,7 @@ class LiveJournal:
             require(prior is None or prior['key'] == key, 'This operation slot is already bound to different inputs. No additional compute was scheduled.')
             row = db.execute('SELECT * FROM live_writes WHERE key=?', (key,)).fetchone()
             if row:
-                require(row['request_hash'] == request_hash and (row['request_json'] is None or row['request_json'] == request_json), 'The durable operation request no longer matches its frozen inputs.')
+                require(row['request_json'] is None or (row['request_hash'] == request_hash and row['request_json'] == request_json), 'The durable operation request no longer matches its frozen inputs.')
                 require(row['state'] == 'COMPLETE', 'An external write is uncertain. Reconcile in SimScale; do not resubmit.')
                 return json.loads(row['result'])
             db.execute('''INSERT INTO live_writes
@@ -260,6 +263,29 @@ class LiveJournal:
         require(row is not None, 'The run has no retained reviewed topology binding.')
         return row['level'], row['mapping_hash'], json.loads(row['mapping_json'])
 
+    def mapping_for_level(self, level):
+        with self.store.connect() as db:
+            row = db.execute('SELECT mapping_json FROM live_topology_mappings WHERE preparation_id=? AND project=? AND level=?',
+                             (self.preparation_id, self.project_id, level)).fetchone()
+        require(row is not None, 'The mesh level has no retained reviewed topology mapping.')
+        return json.loads(row['mapping_json'])
+
+    def completed_result(self, stage):
+        with self.store.connect() as db:
+            rows = db.execute("SELECT result FROM live_writes WHERE preparation_id=? AND project=? AND stage=? AND state='COMPLETE'",
+                              (self.preparation_id, self.project_id, stage)).fetchall()
+        require(len(rows) == 1 and rows[0]['result'] is not None, 'A required preceding provider operation is not complete.')
+        return json.loads(rows[0]['result'])
+
+    def completed_request(self, stage):
+        with self.store.connect() as db:
+            row = db.execute("SELECT request_json,request_hash FROM live_writes WHERE preparation_id=? AND project=? AND stage=? AND state='COMPLETE'",
+                             (self.preparation_id, self.project_id, stage)).fetchone()
+        require(row is not None and row['request_json'] is not None, 'The preceding operation has no retained frozen request.')
+        request = json.loads(row['request_json'])
+        require(row['request_hash'] == 'sha256-'+fingerprint(request), 'The preceding operation request failed its integrity check.')
+        return request
+
     def summary(self):
         with self.store.connect() as db:
             rows = db.execute('''SELECT key,stage,state,request_hash,created,updated,attempt_count,result
@@ -276,7 +302,38 @@ class LiveJournal:
                 'attemptCount': row['attempt_count'], 'createdAt': row['created'],
                 'updatedAt': row['updated'], 'remote': remote,
             })
+            with self.store.connect() as db:
+                reconciled = db.execute('SELECT evidence_hash FROM live_reconciliations WHERE job_key=?', (row['key'],)).fetchone()
+            output[-1]['reconciliationEvidenceHash'] = reconciled['evidence_hash'] if reconciled else None
         return output
+
+    def uncertain_request(self, stage):
+        require(isinstance(stage, str) and 1 <= len(stage) <= 100, 'Choose a bounded operation stage to reconcile.')
+        with self.store.connect() as db:
+            rows = db.execute("SELECT * FROM live_writes WHERE preparation_id=? AND project=? AND stage=? AND state='WRITE_UNCERTAIN'",
+                              (self.preparation_id, self.project_id, stage)).fetchall()
+        require(len(rows) == 1, 'Exactly one write-uncertain operation with that stage is required.')
+        require(rows[0]['request_json'] is not None, 'Legacy operation inputs are unavailable; this write cannot be reconciled automatically.')
+        request = json.loads(rows[0]['request_json'])
+        require(rows[0]['request_hash'] == 'sha256-'+fingerprint(request), 'The retained reconciliation request failed its integrity check.')
+        return rows[0], request
+
+    def reconcile(self, stage, result, reviewer, evidence):
+        require(isinstance(reviewer, str) and 0 < len(reviewer.strip()) <= 100, 'A named operator must review reconciliation evidence.')
+        row, _ = self.uncertain_request(stage)
+        evidence_json = encoded(evidence)
+        evidence_hash = 'sha256-' + hashlib.sha256(evidence_json.encode()).hexdigest()
+        result_json = encoded(result)
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            prior = db.execute('SELECT * FROM live_reconciliations WHERE job_key=?', (row['key'],)).fetchone()
+            require(prior is None, 'This uncertain operation already has reconciliation evidence.')
+            updated = db.execute("UPDATE live_writes SET state='COMPLETE',result=?,updated=? WHERE key=? AND state='WRITE_UNCERTAIN'",
+                                 (result_json, self.clock(), row['key']))
+            require(updated.rowcount == 1, 'The operation changed while reconciliation was being verified.')
+            db.execute('INSERT INTO live_reconciliations VALUES (?, ?, ?, ?, ?)',
+                       (row['key'], reviewer.strip(), evidence_hash, evidence_json, self.clock()))
+        return {'stage': stage, 'status': 'RECONCILED', 'evidenceHash': evidence_hash, 'result': result}
 
     def retain_evidence(self, record):
         validate_evidence(record)
@@ -340,7 +397,89 @@ class LiveWorkflow:
         require('sha256-'+hashlib.sha256(content).hexdigest() == self.draft['stepSha256'], 'CAD bytes changed.')
         units = re.findall(rb'SI_UNIT\s*\(\s*([^,]+),\s*\.METRE\.\s*\)', content)
         require(units and all(unit.strip() == b'$' for unit in units) and b'CONVERSION_BASED_UNIT' not in content, 'This export path requires explicitly meter-based STEP units.')
-        return self.journal.once('import', {'stepHash': self.draft['stepSha256']}, lambda: asdict(self.client.import_step(content, name='BuildReady frozen demo bracket', input_unit='m')))
+        request = {'stepHash': self.draft['stepSha256'], 'name': 'BuildReady frozen demo bracket', 'inputUnit': 'm'}
+        return self.journal.once('import', request, lambda: asdict(self.client.import_step(content, name=request['name'], input_unit=request['inputUnit'])))
+
+    def reconcile(self, value):
+        """Resolve a lost response using provider reads only; never replay a write."""
+        require(isinstance(value, dict) and set(value) == {'stage','reviewer','providerEvidenceReviewed','candidate'}, 'Use the complete reconciliation contract.')
+        require(value['providerEvidenceReviewed'] is True, 'The operator must review the named provider object before reconciliation.')
+        require(isinstance(value['reviewer'], str) and 0 < len(value['reviewer'].strip()) <= 100, 'A named operator must review reconciliation evidence.')
+        stage, candidate = value['stage'], value['candidate']
+        require(isinstance(candidate, dict), 'Reconciliation candidate IDs are required.')
+        row, request = self.journal.uncertain_request(stage)
+        evidence = {'stage': stage, 'requestHash': row['request_hash'], 'providerChecks': []}
+        level_match = re.fullmatch(r'(mesh-create|mesh-start|simulation-create|run-create|run-start)-(\d+)', stage or '')
+        if stage == 'import':
+            require(set(request) == {'stepHash','name','inputUnit'}, 'The retained import request lacks the identity fields needed for reconciliation.')
+            require(set(candidate) == {'storageId','cadId','cadStateId','stepSha256','geometryParityChecked'}, 'Import reconciliation requires IDs, the retained STEP hash and explicit geometry-parity review.')
+            require(candidate['stepSha256'] == request.get('stepHash') and candidate['geometryParityChecked'] is True, 'The operator must attest the candidate import against the exact retained STEP artifact.')
+            cad, state = self.client._uuid(candidate['cadId'],'CAD'), self.client._uuid(candidate['cadStateId'],'CAD state')
+            storage = self.client._opaque_id(candidate['storageId'],'storage')
+            actual = self.client._api_json('GET', f'{self.base}/cadimports/{cad}')
+            actual_state = self.client._uuid(actual.get('cadStateId'),'CAD state')
+            require(actual.get('status') == 'FINISHED' and actual_state == state, 'The candidate CAD import is not the exact finished state.')
+            if actual.get('name') is not None:
+                require(actual['name'] == request['name'], 'The candidate CAD import name differs from the frozen request.')
+            topology = self.client.collection(f'/v1/cads/{cad}/states/{state}/topology')
+            require(topology, 'The candidate CAD state has no readable topology.')
+            result = asdict(CadImportReceipt(self.client.project_id, storage, cad, state, 'FINISHED'))
+            evidence['providerChecks'] = ['finished-cad-import','cad-state-id-match','readable-topology']
+            evidence['storageIdSource'] = 'operator-reviewed-not-provider-readback'
+            evidence['geometryBinding'] = {'source':'operator-attested','stepSha256':candidate['stepSha256']}
+        elif re.fullmatch(r'cancel-[0-9a-f-]{36}', stage or ''):
+            require(set(candidate) == set(), 'Cancel reconciliation does not accept replacement provider IDs.')
+            path = request.get('path')
+            allowed = re.fullmatch(r'/v1/projects/[0-9]{1,30}/(?:meshoperations/[0-9a-f-]{36}|simulations/[0-9a-f-]{36}/runs/[0-9a-f-]{36})', path or '')
+            require(allowed is not None and path.startswith(self.base+'/'), 'The retained cancellation target is invalid.')
+            actual = self.client._api_json('GET', path)
+            require(actual.get('status') in {'FINISHED','FAILED','CANCELED'}, 'The cancellation target is still active; provider acceptance is unresolved.')
+            result, evidence['providerChecks'] = {'accepted':True if actual['status'] == 'CANCELED' else None,'providerStatus':actual['status']}, ['target-terminal-readback']
+        else:
+            require(level_match is not None, 'This operation stage has no safe automated reconciliation path.')
+            kind, level = level_match.group(1), int(level_match.group(2))
+            if kind == 'mesh-create':
+                require(set(candidate) == {'meshOperationId'}, 'Mesh reconciliation requires one mesh operation ID.')
+                identity = self.client._uuid(candidate['meshOperationId'],'mesh operation')
+                actual = self.client._api_json('GET', f'{self.base}/meshoperations/{identity}?meshingSpecSchemaVersion=10.0')
+                require(verify_readback(request, actual), 'The candidate mesh does not match the frozen request.')
+                result, evidence['providerChecks'] = {'meshOperationId':identity}, ['mesh-spec-readback-match']
+            elif kind == 'simulation-create':
+                require(set(candidate) == {'simulationId'}, 'Simulation reconciliation requires one simulation ID.')
+                identity = self.client._uuid(candidate['simulationId'],'simulation')
+                actual = self.client._api_json('GET', f'{self.base}/simulations/{identity}?simulationSpecSchemaVersion=34.0')
+                require(verify_readback(request, actual), 'The candidate simulation does not match the frozen request.')
+                result, evidence['providerChecks'] = {'simulationId':identity}, ['simulation-spec-readback-match']
+            elif kind == 'run-create':
+                require(set(candidate) == {'simulationId','runId'}, 'Run reconciliation requires simulation and run IDs.')
+                simulation, run = self.client._uuid(candidate['simulationId'],'simulation'), self.client._uuid(candidate['runId'],'run')
+                require(self.journal.completed_result(f'simulation-create-{level}').get('simulationId') == simulation, 'The candidate run belongs to another simulation chain.')
+                frozen_spec = self.journal.completed_request(f'simulation-create-{level}')
+                simulation_spec = self.client._api_json('GET', f'{self.base}/simulations/{simulation}?simulationSpecSchemaVersion=34.0')
+                run_spec = self.client._api_json('GET', f'{self.base}/simulations/{simulation}/runs/{run}/spec?simulationSpecSchemaVersion=34.0')
+                require(verify_readback(frozen_spec, simulation_spec) and verify_readback(frozen_spec, run_spec), 'The candidate run does not match the original frozen simulation request.')
+                run_status = self.client._api_json('GET', f'{self.base}/simulations/{simulation}/runs/{run}')
+                if run_status.get('name') is not None:
+                    require(run_status['name'] == request.get('name'), 'The candidate run name differs from the frozen creation request.')
+                result, evidence['providerChecks'] = {'runId':run}, ['run-exists','run-spec-matches-simulation']
+                # The normal advance path persists the run specification and
+                # topology binding after this receipt is recovered.
+            else:
+                require(set(candidate) == {'targetId'}, 'Start reconciliation requires the target operation ID.')
+                target = self.client._uuid(candidate['targetId'],'target')
+                if kind == 'mesh-start':
+                    require(self.journal.completed_result(f'mesh-create-{level}').get('meshOperationId') == target, 'The candidate mesh start targets another operation.')
+                    actual = self.client._api_json('GET', f'{self.base}/meshoperations/{target}?meshingSpecSchemaVersion=10.0')
+                    require(verify_readback(request, actual), 'The candidate mesh start target no longer matches the frozen request.')
+                else:
+                    require(self.journal.completed_result(f'run-create-{level}').get('runId') == target, 'The candidate run start targets another run.')
+                    simulation = self.client._uuid(self.journal.completed_result(f'simulation-create-{level}').get('simulationId'),'simulation')
+                    run_path = f'{self.base}/simulations/{simulation}/runs/{target}'
+                    actual = self.client._api_json('GET', run_path)
+                    require(verify_readback(request, self.client._api_json('GET', run_path+'/spec?simulationSpecSchemaVersion=34.0')), 'The candidate run start target no longer matches the frozen request.')
+                require(actual.get('status') in {'QUEUED','RUNNING','FINISHED','FAILED','CANCELED'}, 'Provider state does not prove the start request was accepted.')
+                result, evidence['providerChecks'] = {'accepted':True}, ['target-left-ready-state']
+        return self.journal.reconcile(stage, result, value['reviewer'], evidence)
 
     def topology(self):
         receipt = self.journal.completed_import()
@@ -499,7 +638,7 @@ class LiveWorkflow:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['status','evidence','import','topology','advance','cancel','results'])
+    parser.add_argument('action', choices=['status','evidence','import','topology','advance','reconcile','cancel','results'])
     parser.add_argument('--preparation', required=True)
     parser.add_argument('--approval', type=Path)
     parser.add_argument('--mapping', type=Path)
@@ -507,10 +646,11 @@ def main():
     parser.add_argument('--kind', choices=['mesh','run'])
     parser.add_argument('--id')
     parser.add_argument('--simulation')
+    parser.add_argument('--reconciliation', type=Path)
     args = parser.parse_args()
     load_dotenv()
     client = LiveClient(api_key=os.environ.get('SIMSCALE_API_KEY',''), project_id=os.environ.get('SIMSCALE_PROJECT_ID',''))
-    workflow = LiveWorkflow(PreparationStore(), args.preparation, client, require_cad=args.action not in {'status','cancel','evidence'})
+    workflow = LiveWorkflow(PreparationStore(), args.preparation, client, require_cad=args.action not in {'status','cancel','evidence','reconcile'})
     def read(path):
         require(path is not None and path.stat().st_size <= 65536, 'Supply a bounded local approval/mapping JSON file.')
         return json.loads(path.read_text(encoding='utf-8'))
@@ -520,6 +660,7 @@ def main():
     elif args.action == 'import': result = workflow.import_cad(read(args.approval))
     elif args.action == 'topology': result = workflow.topology()
     elif args.action == 'advance': result = workflow.advance(read(args.mapping), read(args.approval), args.level)
+    elif args.action == 'reconcile': result = workflow.reconcile(read(args.reconciliation))
     elif args.action == 'results': result = workflow.capture_metrics(args.simulation, args.id, read(args.mapping))
     else: result = workflow.cancel(args.kind, args.id, args.simulation)
     print(json.dumps(result, indent=2, allow_nan=False))

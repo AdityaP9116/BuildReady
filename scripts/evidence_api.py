@@ -127,17 +127,18 @@ def dispatch(handler, method: str, path: str) -> bool:
                 result = [{'preparationId': row['id'], 'expiresAt': row['expires'], 'source': json.loads(row['source_json'])} for row in rows]
             elif method == 'POST':
                 body = json_body(handler)
-                exact(body, {'action','preparationId','approval','mapping','level','kind','identity','simulation'})
-                if body['action'] not in {'draft','status','import','topology','advance','cancel','results'}:
+                exact(body, {'action','preparationId','approval','mapping','level','kind','identity','simulation','reconciliation'})
+                if body['action'] not in {'draft','status','import','topology','advance','reconcile','cancel','results'}:
                     raise EvidenceError('INVALID_ACTION', 'Unsupported commissioning action.')
                 client = LiveClient(api_key=os.environ.get('SIMSCALE_API_KEY',''), project_id=os.environ.get('SIMSCALE_PROJECT_ID',''))
                 try:
-                    live = LiveWorkflow(preparation, body['preparationId'], client, require_cad=body['action'] not in {'status','cancel'})
+                    live = LiveWorkflow(preparation, body['preparationId'], client, require_cad=body['action'] not in {'status','reconcile','cancel'})
                     if body['action'] == 'draft': result = live.draft
                     elif body['action'] == 'status': result = live.journal.summary()
                     elif body['action'] == 'import': result = live.import_cad(body['approval'])
                     elif body['action'] == 'topology': result = live.topology()
                     elif body['action'] == 'advance': result = live.advance(body['mapping'], body['approval'], body['level'])
+                    elif body['action'] == 'reconcile': result = live.reconcile(body['reconciliation'])
                     elif body['action'] == 'results': result = live.capture_metrics(body['simulation'], body['identity'], body['mapping'])
                     else: result = live.cancel(body['kind'], body['identity'], body['simulation'])
                 except (ValueError, SimScaleTransportError) as error:

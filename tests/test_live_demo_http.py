@@ -56,3 +56,11 @@ class LiveHttpTests(unittest.TestCase):
         self.assertEqual(403,self.request('POST',path,{},headers={'X-CSRF-Token':'invalid'})[0])
         self.assertEqual(422,self.request('POST',path,{'action':'advance'})[0])
         self.assertEqual(404,self.request('GET','/api/private/live-demo?workspace=other')[0])
+        body = {'action':'reconcile','preparationId':'a'*64,'approval':None,'mapping':None,'level':0,
+                'kind':'mesh','identity':'','simulation':'','reconciliation':{'stage':'mesh-create-0'}}
+        with patch('scripts.simscale_live.LiveClient'), patch('scripts.simscale_live.LiveWorkflow') as workflow:
+            workflow.return_value.reconcile.return_value = {'status':'RECONCILED'}
+            status,data,_ = self.request('POST',path,body)
+            self.assertEqual(200,status)
+            self.assertEqual('RECONCILED',data['result']['status'])
+            workflow.return_value.reconcile.assert_called_once_with(body['reconciliation'])

@@ -40,7 +40,8 @@ document.querySelectorAll('[data-action]').forEach(button => button.addEventList
     busy = true; document.querySelectorAll('[data-action]').forEach(item => { item.disabled = true })
     const payload = {action, preparationId:$('#preparation').value, approval:['import','advance'].includes(action) ? JSON.parse($('#approval').value) : null,
       mapping:action === 'advance' ? JSON.parse($('#mapping').value) : action === 'results' ? JSON.parse($('#result-selection').value) : null, level:Number($('#level').value), kind:$('#kind').value,
-      identity:$('#identity').value, simulation:$('#simulation').value}
+      identity:$('#identity').value, simulation:$('#simulation').value,
+      reconciliation:action === 'reconcile' ? JSON.parse($('#reconciliation').value) : null}
     output(await api(`live-demo?workspace=${encodeURIComponent($('#workspace').value)}`, 'POST', payload))
   } catch (error) { output(error.message) } finally {
     busy = false; $('#human-ack').checked = false; document.querySelectorAll('[data-action]').forEach(item => { item.disabled = false })

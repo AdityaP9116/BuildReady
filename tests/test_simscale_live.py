@@ -7,7 +7,7 @@ from pathlib import Path
 from threading import Event
 from unittest.mock import Mock
 
-from scripts.live_demo_preparation import PreparationStore
+from scripts.live_demo_preparation import PreparationStore, fingerprint
 from scripts.onshape_export import StepExport
 from scripts.simscale_live import LiveClient, LiveWorkflow, LiveJournal, numeric_csv, verify_readback
 from scripts.simscale_transport import CadImportReceipt
@@ -59,6 +59,8 @@ class FakeProvider(LiveClient):
         if method == 'POST' and path.endswith('/simulations'):
             self.spec = copy.deepcopy(payload); return {'simulationId':uid(4)}
         if method == 'POST' and path.endswith('/runs'): return {'runId':uid(5)}
+        if method == 'GET' and '/cadimports/' in path:
+            return {'name':'BuildReady frozen demo bracket','status':'FINISHED','cadStateId':uid(2)}
         if '/meshoperations/' in path: return {**self.mesh,'status':self.mesh_status,'meshId':uid(6)}
         if '/spec?' in path or path.endswith(uid(4)) or 'simulationSpecSchemaVersion' in path: return copy.deepcopy(self.spec)
         if '/runs/' in path: return {'status':self.run_status}
@@ -170,6 +172,96 @@ class LiveTests(unittest.TestCase):
         expired = LiveWorkflow(self.store,self.identity,self.client,clock=lambda:self.now,require_cad=False)
         self.assertEqual({'accepted':True},expired.cancel('mesh',uid(3)))
 
+    def test_import_reconciliation_uses_reads_and_never_replays_upload(self):
+        self.flow.import_cad(self.approval)
+        with self.store.connect() as db:
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL WHERE stage='import'")
+        before_imports = sum(call[0] == 'IMPORT' for call in self.client.calls)
+        result = self.flow.reconcile({'stage':'import','reviewer':'Operator','providerEvidenceReviewed':True,
+                                      'candidate':{'storageId':'storage','cadId':uid(1),'cadStateId':uid(2),
+                                                   'stepSha256':self.flow.draft['stepSha256'],'geometryParityChecked':True}})
+        self.assertEqual('RECONCILED',result['status'])
+        self.assertEqual(before_imports,sum(call[0] == 'IMPORT' for call in self.client.calls))
+        self.assertEqual(uid(1),self.flow.journal.completed_import().cad_id)
+        summary = self.flow.journal.summary()[0]
+        self.assertTrue(summary['terminal']); self.assertIsNotNone(summary['reconciliationEvidenceHash'])
+        with self.assertRaisesRegex(ValueError,'write-uncertain'):
+            self.flow.reconcile({'stage':'import','reviewer':'Operator','providerEvidenceReviewed':True,
+                                 'candidate':{'storageId':'storage','cadId':uid(1),'cadStateId':uid(2),
+                                              'stepSha256':self.flow.draft['stepSha256'],'geometryParityChecked':True}})
+
+    def test_mesh_reconciliation_requires_exact_frozen_readback(self):
+        self.flow.import_cad(self.approval)
+        self.flow.advance(self.mapping,self.approval,0)
+        with self.store.connect() as db:
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL WHERE stage='mesh-create-0'")
+        commands = list(self.client.commands)
+        candidate = {'stage':'mesh-create-0','reviewer':'Operator','providerEvidenceReviewed':True,
+                     'candidate':{'meshOperationId':uid(3)}}
+        self.client.mesh['model']['sizing']['fineness'] = 9
+        with self.assertRaisesRegex(ValueError,'frozen request'): self.flow.reconcile(candidate)
+        self.client.mesh['model']['sizing']['fineness'] = 3
+        self.assertEqual('RECONCILED',self.flow.reconcile(candidate)['status'])
+        self.assertEqual(commands,self.client.commands)
+
+    def test_reconciliation_contract_and_unprovable_start_fail_closed(self):
+        self.flow.import_cad(self.approval)
+        self.flow.advance(self.mapping,self.approval,0)
+        with self.store.connect() as db:
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL WHERE stage='mesh-start-0'")
+        base = {'stage':'mesh-start-0','reviewer':'Operator','providerEvidenceReviewed':True,'candidate':{'targetId':uid(3)}}
+        self.client.mesh_status = 'READY'
+        with self.assertRaisesRegex(ValueError,'does not prove'): self.flow.reconcile(base)
+        with self.assertRaises(ValueError): self.flow.reconcile({**base,'providerEvidenceReviewed':False})
+        self.client.mesh_status = 'RUNNING'
+        self.assertEqual('RECONCILED',self.flow.reconcile(base)['status'])
+
+    def test_run_create_and_start_reconciliation_follow_exact_simulation_chain(self):
+        self.flow.import_cad(self.approval)
+        self.flow.advance(self.mapping,self.approval,0)
+        self.client.mesh_status = 'FINISHED'
+        self.flow.advance(self.mapping,self.approval,0)
+        with self.store.connect() as db:
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL WHERE stage='simulation-create-0'")
+        self.assertEqual('RECONCILED',self.flow.reconcile({'stage':'simulation-create-0','reviewer':'Operator',
+                         'providerEvidenceReviewed':True,'candidate':{'simulationId':uid(4)}})['status'])
+        with self.store.connect() as db:
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL WHERE stage='run-create-0'")
+        candidate = {'stage':'run-create-0','reviewer':'Operator','providerEvidenceReviewed':True,
+                     'candidate':{'simulationId':uid(4),'runId':uid(5)}}
+        with self.assertRaisesRegex(ValueError,'another simulation chain'):
+            self.flow.reconcile({**candidate,'candidate':{'simulationId':uid(99),'runId':uid(5)}})
+        self.client.spec['model']['boundaryConditions'][1]['force']['value']['z']['value'] = -200
+        with self.assertRaisesRegex(ValueError,'original frozen'):
+            self.flow.reconcile(candidate)
+        self.client.spec['model']['boundaryConditions'][1]['force']['value']['z']['value'] = -100
+        commands = list(self.client.commands)
+        self.assertEqual('RECONCILED',self.flow.reconcile(candidate)['status'])
+        self.assertEqual(commands,self.client.commands)
+        with self.store.connect() as db:
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL WHERE stage='run-start-0'")
+        start = {'stage':'run-start-0','reviewer':'Operator','providerEvidenceReviewed':True,'candidate':{'targetId':uid(5)}}
+        self.client.run_status = 'READY'
+        with self.assertRaisesRegex(ValueError,'does not prove'): self.flow.reconcile(start)
+        self.client.run_status = 'FINISHED'
+        self.assertEqual('RECONCILED',self.flow.reconcile(start)['status'])
+
+    def test_cancel_reconciliation_accepts_only_a_terminal_bound_target(self):
+        self.flow.import_cad(self.approval)
+        self.flow.advance(self.mapping,self.approval,0)
+        self.flow.cancel('mesh',uid(3))
+        with self.store.connect() as db:
+            stage = db.execute("SELECT stage FROM live_writes WHERE stage LIKE 'cancel-%'").fetchone()['stage']
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL WHERE stage=?",(stage,))
+        candidate = {'stage':stage,'reviewer':'Operator','providerEvidenceReviewed':True,'candidate':{}}
+        self.client.mesh_status = 'RUNNING'
+        with self.assertRaisesRegex(ValueError,'still active'): self.flow.reconcile(candidate)
+        commands = list(self.client.commands)
+        self.client.mesh_status = 'CANCELED'
+        result = self.flow.reconcile(candidate)
+        self.assertEqual('CANCELED',result['result']['providerStatus'])
+        self.assertEqual(commands,self.client.commands)
+
     def test_csv_and_readback_reject_ambiguous_nonfinite_and_boolean_numbers(self):
         for raw in (b'a,a\n1,2',b'a\nnan',b'a\n',b'b\n1',b'a\n1,2'):
             with self.assertRaises(ValueError): numeric_csv(raw,['a'])
@@ -186,18 +278,25 @@ class LiveTests(unittest.TestCase):
         with self.assertRaises(ValueError): client.collection('/v1/test')
 
     def test_legacy_live_journal_migrates_without_inventing_request_content(self):
+        key = fingerprint({'preparation':self.identity,'project':self.client.project_id,'stage':'legacy-complete','payload':{}})
         with self.store.connect() as db:
             db.execute('DROP TABLE live_writes')
             db.execute('CREATE TABLE live_writes (key TEXT PRIMARY KEY, preparation_id TEXT NOT NULL, project TEXT NOT NULL, stage TEXT NOT NULL, state TEXT NOT NULL, result TEXT)')
             db.execute('INSERT INTO live_writes VALUES (?, ?, ?, ?, ?, ?)',
-                       ('a'*64, self.identity, self.client.project_id, 'legacy-complete', 'COMPLETE', '{"accepted":true}'))
-        migrated = LiveJournal(self.store,self.identity,self.client.project_id,clock=lambda:self.now).summary()[0]
-        self.assertEqual('sha256-'+'a'*64, migrated['requestHash'])
+                       (key, self.identity, self.client.project_id, 'legacy-complete', 'COMPLETE', '{"accepted":true}'))
+        journal = LiveJournal(self.store,self.identity,self.client.project_id,clock=lambda:self.now)
+        migrated = journal.summary()[0]
+        self.assertEqual('sha256-'+key, migrated['requestHash'])
         self.assertTrue(migrated['terminal'])
+        self.assertEqual({'accepted':True},journal.once('legacy-complete',{},Mock(side_effect=AssertionError('must not replay'))))
         with self.store.connect() as db:
             row = db.execute('SELECT request_json,attempt_count FROM live_writes').fetchone()
         self.assertIsNone(row['request_json'])
         self.assertEqual(1,row['attempt_count'])
+        with self.store.connect() as db:
+            db.execute("UPDATE live_writes SET state='WRITE_UNCERTAIN',result=NULL")
+        with self.assertRaisesRegex(ValueError,'Legacy operation inputs'):
+            journal.uncertain_request('legacy-complete')
 
     def test_retained_result_expiry_and_digest_are_enforced(self):
         journal = self.flow.journal
