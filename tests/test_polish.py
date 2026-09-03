@@ -75,7 +75,7 @@ class ProductPolishTests(unittest.TestCase):
         for marker in (
             "Ask BuildReady",
             "Check this model",
-            "How dimensions were recognized",
+            "Source dimensions and missing checks",
             'id="insight-transcript" role="log"',
             'id="insight-input"',
             'id="insight-export-md"',

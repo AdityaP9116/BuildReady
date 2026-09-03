@@ -26,6 +26,9 @@ export function validateReviewReadiness({ fixture, inspection, proposal, decisio
   if (inspection.revisionPrecondition !== precondition) {
     throw new WorkflowRuleError('STALE_INSPECTION', 'the inspection does not match the active revision.', true)
   }
+  if (fixture.sourceIdentity && (!inspection.coverage || inspection.coverage.skippedRules.length > 0)) {
+    throw new WorkflowRuleError('MANUFACTURING_INPUTS_REQUIRED', 'resolve the missing manufacturing inputs before packaging this live design; no findings is not a passed inspection.')
+  }
   if (!proposal || !decisionRecord || !['approved', 'rejected'].includes(decisionRecord.decision)) {
     throw new WorkflowRuleError('DECISION_REQUIRED', 'record a visible human decision first.')
   }
@@ -71,6 +74,8 @@ function packageSource(source) {
       retrievedAt: provenance.retrievedAt,
       measurementCount: provenance.measurementCount,
       discovery: provenance.discovery ?? null,
+      nativeDimensions: provenance.nativeDimensions ?? [],
+      manufacturingInputGaps: provenance.manufacturingInputGaps ?? [],
     }),
   })
 }
@@ -121,6 +126,8 @@ export function createReviewPackage({ fixture, source, snapshotKey, inspection, 
       findingCount: findings.length,
       counts: inspection.counts,
       coverage: inspection.coverage ?? null,
+      assessmentStatus: inspection.assessmentStatus ?? 'unknown',
+      manufacturingApproved: false,
       findings: findings.map((finding) => ({ ...finding })),
       evidenceReferences,
     }),

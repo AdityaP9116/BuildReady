@@ -39,6 +39,7 @@ class MockOnshape:
     def __init__(self) -> None:
         self.mode = "healthy"
         self.request_count = 0
+        self.paths = []
         self.fail_first = 0
         outer = self
 
@@ -58,6 +59,7 @@ class MockOnshape:
 
             def do_GET(self) -> None:  # noqa: N802
                 outer.request_count += 1
+                outer.paths.append(self.path)
 
                 # Transient outage that should recover within the retry budget.
                 if outer.fail_first > 0:
@@ -147,6 +149,71 @@ class OnshapeProxyTests(unittest.TestCase):
         status, payload = serve.local_onshape_payload()
         self.assertEqual(200, status)
         self.assertEqual(FIXTURE["microversionId"], payload["microversionId"])
+        self.assertTrue(any(f'/m/{FIXTURE["microversionId"]}/' in path for path in self.mock.paths))
+
+    def test_native_dimensions_are_sanitized_not_inferred(self) -> None:
+        feature = {"featureId": "native-1", "name": "Not a wall measurement", "featureType": "extrude", "parameters": [
+            {"parameterId": "bodyType", "value": "SOLID"},
+            {"parameterId": "endBound", "value": "BLIND"},
+            {"parameterId": "depth", "expression": "25*millimeter", "value": 0.0, "privateData": "not returned"},
+        ]}
+        result = serve.collect_native_dimensions([feature])
+        self.assertEqual("25*millimeter", result[0]["expression"])
+        self.assertEqual("unassigned", result[0]["semanticStatus"])
+        self.assertNotIn("value", result[0])
+        self.assertNotIn("privateData", str(result))
+        self.assertEqual([], serve.collect_native_dimensions([{**feature, "suppressed": True}]))
+        for bound in ("UP_TO_NEXT", "UP_TO_SURFACE", "THROUGH_ALL"):
+            changed = {**feature, "parameters": [*feature["parameters"][:1], {"parameterId": "endBound", "value": bound}, feature["parameters"][2]]}
+            self.assertEqual([], serve.collect_native_dimensions([changed]))
+        self.assertEqual([], serve.collect_native_dimensions([{**feature, "parameters": None}]))
+        self.assertEqual([], serve.collect_native_dimensions([{**feature, "featureId": "x" * 65}]))
+
+    def test_native_only_model_loads_without_fixture_variables(self) -> None:
+        feature = {"featureId": "native-fillet", "featureType": "fillet", "parameters": [{"parameterId": "radius", "expression": "2*millimeter"}]}
+        def get(path):
+            if "/features" in path:
+                return {"features": [feature], "microversionId": FIXTURE["microversionId"]}
+            return {"name": "Native bracket"}
+        with mock.patch.object(serve, "onshape_get", side_effect=get):
+            status, payload = serve.local_onshape_payload()
+        self.assertEqual(200, status)
+        self.assertEqual([], payload["variables"])
+        self.assertEqual(1, len(payload["nativeDimensions"]))
+
+    def test_immutable_refetch_uses_new_revision_not_earlier_workspace_values(self) -> None:
+        def get(path):
+            if "/currentmicroversion" in path:
+                return {"microversion": FIXTURE["microversionId"]}
+            if "/features" in path:
+                return {"features": [{"featureId": "fillet", "featureType": "fillet", "parameters": [{
+                    "parameterId": "radius", "expression": "2 mm" if "/m/" in path else "9 mm",
+                }]}]}
+            return {"name": "Edited bracket"}
+        with mock.patch.object(serve, "onshape_get", side_effect=get):
+            status, payload = serve.local_onshape_payload()
+        self.assertEqual(200, status)
+        self.assertEqual("2 mm", payload["nativeDimensions"][0]["expression"])
+
+    def test_mismatched_immutable_revision_fails_closed(self) -> None:
+        def get(path):
+            if "/currentmicroversion" in path:
+                return {"microversion": FIXTURE["microversionId"]}
+            if "/m/" in path:
+                return {"microversionId": "999999999999999999999999"}
+            return {"features": FIXTURE["features"]}
+        with mock.patch.object(serve, "onshape_get", side_effect=get):
+            status, payload = serve.local_onshape_payload()
+        self.assertEqual(502, status)
+        self.assertEqual("ONSHAPE_REVISION_UNVERIFIED", payload["error"]["code"])
+        self.assertFalse(serve._inflight)
+
+    def test_suppressed_variable_is_not_measurement_evidence(self) -> None:
+        found = []
+        serve.collect_variables({"suppressed": True, "parameters": [
+            {"parameterId": "name", "value": "wallThickness"}, {"parameterId": "value", "expression": "1 mm"},
+        ]}, found)
+        self.assertEqual([], found)
 
     def test_bad_credentials_fail_fast_without_retrying(self) -> None:
         self.mock.mode = "unauthorized"

@@ -1,3 +1,7 @@
+[hidden] {
+  display: none !important;
+}
+
 :root {
   color: #e8f0ec;
   background: #08100e;
@@ -2164,3 +2168,9 @@ body.onshape-embedded .insight-suggestion {
     flex-direction: row;
   }
 }
+.sourcing-shell { max-width: 1050px; margin: 0 auto; padding: 32px 24px; }
+.sourcing-shell label, .manufacturing-review label { display: block; margin: 12px 0; }
+.sourcing-shell textarea { display: block; width: 100%; font: 14px/1.5 monospace; }
+.sourcing-shell pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sourcing-shell button { margin: 8px 8px 8px 0; }
+.manufacturing-review fieldset { padding: 12px; margin: 12px 0; }

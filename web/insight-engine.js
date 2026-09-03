@@ -50,8 +50,8 @@ export function classifyInsightQuery(rawQuery) {
   if (hasAny(text, UNSAFE_TERMS)) return Object.freeze({ kind: 'authority_boundary', query, featureId: selectedFeatureId })
   if (hasAny(text, ['help', 'what can you do', 'commands', 'how do i use'])) return Object.freeze({ kind: 'help', query, featureId: selectedFeatureId })
   if (hasAny(text, ['simscale', 'stress', 'fea', 'simulate', 'simulation'])) return Object.freeze({ kind: 'simulation', query, featureId: selectedFeatureId })
-  if (hasAny(text, ['load live onshape', 'load the live onshape', 'load onshape', 'read part studio', 'use part studio', 'connect onshape'])) return Object.freeze({ kind: 'live_source', query, featureId: selectedFeatureId })
-  if (hasAny(text, ['variable', 'mapping', 'mapped', 'inferred', 'discovery', 'confidence'])) return Object.freeze({ kind: 'variables', query, featureId: selectedFeatureId })
+  if (hasAny(text, ['load live onshape', 'load the live onshape', 'load onshape', 'load this part studio', 'read part studio', 'use part studio', 'connect onshape'])) return Object.freeze({ kind: 'live_source', query, featureId: selectedFeatureId })
+  if (hasAny(text, ['variable', 'mapping', 'mapped', 'inferred', 'discovery', 'confidence', 'dimensions recognized'])) return Object.freeze({ kind: 'variables', query, featureId: selectedFeatureId })
   if (hasAny(text, ['coverage', 'skipped rule', 'applicable rule', 'what was checked'])) return Object.freeze({ kind: 'coverage', query, featureId: selectedFeatureId })
   if (hasAny(text, ['audit', 'history', 'what happened', 'actions taken'])) return Object.freeze({ kind: 'audit', query, featureId: selectedFeatureId })
   if (hasAny(text, ['package', 'report', 'export review'])) return Object.freeze({ kind: 'package', query, featureId: selectedFeatureId })
@@ -62,7 +62,7 @@ export function classifyInsightQuery(rawQuery) {
   if (hasAny(text, ['recommend', 'fix', 'improve', 'change', 'next step', 'what should'])) return Object.freeze({ kind: 'recommendations', query, featureId: selectedFeatureId })
   if (hasAny(text, ['explain', 'why', 'detail', 'specific', 'selected feature', 'this feature'])) return Object.freeze({ kind: 'explain', query, featureId: selectedFeatureId })
   if (hasAny(text, ['highest risk', 'biggest risk', 'worst', 'priority', 'prioritize', 'summary', 'risks', 'issues', 'findings'])) return Object.freeze({ kind: 'risks', query, featureId: selectedFeatureId })
-  if (hasAny(text, ['inspect', 'analyze', 'analyse', 'manufacturability', 'run dfm', 'dfm check'])) return Object.freeze({ kind: 'inspect', query, featureId: selectedFeatureId })
+  if (hasAny(text, ['inspect', 'analyze', 'analyse', 'manufacturability', 'manufacturing check', 'run dfm', 'dfm check'])) return Object.freeze({ kind: 'inspect', query, featureId: selectedFeatureId })
   if (hasAny(text, ['dimension', 'measurement', 'size', 'diameter', 'depth', 'width', 'thickness', 'radius'])) return Object.freeze({ kind: 'measurements', query, featureId: selectedFeatureId })
   if (hasAny(text, ['model', 'part', 'design', 'material', 'process', 'revision', 'microversion', 'context', 'workflow status', 'current status'])) return Object.freeze({ kind: 'context', query, featureId: selectedFeatureId })
   return Object.freeze({ kind: 'fallback', query, featureId: selectedFeatureId })
@@ -169,6 +169,9 @@ export function composeInsightResponse(intent, snapshot) {
     )
   }
   if (intent.kind === 'variables') {
+    if (provenance?.nativeDimensions?.length && !provenance?.discovery?.mappings?.length) {
+      return response(`The model has ${provenance.nativeDimensions.length} native parameter expressions, but none has an established manufacturing role. ${provenance.nativeDimensions.map((item) => `${item.featureName} / ${item.parameterId}: ${item.valueMm === null ? 'unresolved expression' : `${item.valueMm} mm`}`).join('; ')}. These are authored parameters, not measured final geometry. Review the missing inputs in the source evidence panel.`, intent.kind, { followUps: ['Show rule coverage', 'Run a full manufacturability check'] })
+    }
     if (!provenance?.discovery) {
       return response('The controlled fixture has reviewed measurements but no live Onshape variable-discovery record. Load a live Part Studio to inspect semantic mappings.', intent.kind)
     }
@@ -200,6 +203,9 @@ export function composeInsightResponse(intent, snapshot) {
   if (intent.kind === 'inspect' || intent.kind === 'risks') {
     if (!workflow.inspection) return response('The inspection could not be created for the current model.', intent.kind)
     if (findings.length === 0) {
+      if (workflow.inspection.assessmentStatus === 'incomplete') {
+        return response(`Manufacturing assessment is incomplete: ${workflow.inspection.coverage.evaluatedRuleCount} of ${workflow.inspection.coverage.availableRules} checks ran. Missing inputs must be reviewed; zero findings is not a pass. See the source evidence panel for the measurements each check requires.`, intent.kind, { followUps: ['Show rule coverage', 'How were variables mapped?'] })
+      }
       return response(`The check ran ${workflow.inspection.coverage.evaluatedRuleCount} applicable checks and found no issues at the configured thresholds.`, intent.kind, { followUps: ['Show rule coverage', 'Show model measurements'] })
     }
     const top = findings.map((finding, index) => `${index + 1}. ${finding.severity.toUpperCase()} — ${finding.title} (${finding.calculation})`)
@@ -210,6 +216,7 @@ export function composeInsightResponse(intent, snapshot) {
     )
   }
   if (intent.kind === 'explain') {
+    if (!selectedFeature) return response('No manufacturing region has been identified yet. Review the native parameter inventory and missing inputs first.', intent.kind)
     if (!selectedFinding) {
       return response(`${selectedFeature.label} has measurements ${dimensionsText(selectedFeature)}, but it has no active violation in the current inspection.`, intent.kind, { followUps: ['Show all model measurements', 'Show rule coverage'] })
     }
@@ -220,8 +227,9 @@ export function composeInsightResponse(intent, snapshot) {
     )
   }
   if (intent.kind === 'measurements') {
+    if (!selectedFeature) return response('No verified manufacturing-region measurements are available. Native feature expressions are listed separately in the source evidence panel; they are not final-solid measurements.', intent.kind)
     return response(
-      `${selectedFeature.label} (${selectedFeature.featureId}) measures ${dimensionsText(selectedFeature)}. These values come from the ${source} and are tied to revision ${design.revisionId}.`,
+      `${selectedFeature.label} (${selectedFeature.featureId}) measures ${dimensionsText(selectedFeature)}. These values come from ${selectedFeature.inputReviewStatus === 'human-reviewed' ? 'a human-entered measurement review, not automatic geometry extraction' : `the ${source}`} and are tied to revision ${design.revisionId}.`,
       intent.kind,
       { followUps: ['Explain this feature', 'How were variables mapped?', 'Run a full manufacturability check'] },
     )

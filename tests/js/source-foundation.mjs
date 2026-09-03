@@ -29,6 +29,33 @@ const state = await import('../../web/state.js?v=20260903-2')
 const { mapOnshapeToDesign } = await import('../../web/onshape-adapter.js?v=20260903-2')
 const { evaluateCncManufacturability } = await import('../../web/cnc-rules.js?v=20260903-2')
 const { revisionPrecondition } = await import('../../web/workflow-rules.js?v=20260903-2')
+const { composeInsightResponse, classifyInsightQuery } = await import('../../web/insight-engine.js?v=20260903-2')
+const { validateReviewReadiness } = await import('../../web/review-package.js?v=20260903-2')
+const { fictionalQuotePreview } = await import('../../web/quote-engine.js?v=20260903-2')
+const { reviewManufacturingInputs, REVIEW_GROUPS } = await import('../../web/manufacturing-review.js?v=20260903-2')
+
+test('human measurement review is revision-bound, clears old evidence and never grants production approval', async () => {
+  const mapped = mapOnshapeToDesign(source(), config, domain.design)
+  state.replaceActiveDesignSnapshot(mapped.design, {sourceId:'onshape-live',label:'Test',provenance:mapped.provenance})
+  const input = {snapshotKey:mapped.design.sourceSnapshotKey, reviewer:'Test reviewer', acknowledged:true,
+    groups:REVIEW_GROUPS.map(([featureId,,keys]) => ({featureId,reference:'Synthetic face reference',dimensions:Object.fromEntries(keys.map(key => [key,1]))}))}
+  const reviewed = await reviewManufacturingInputs(mapped.design,input)
+  state.workflowState.supplierQuotes = [{fictional:true}]
+  state.applyReviewedManufacturingDesign(reviewed)
+  assert.equal(state.workflowState.supplierQuotes.length,0)
+  assert.equal(state.activeDesignContext().manufacturingReview.productionApproved,false)
+  const inspection = evaluateCncManufacturability(reviewed)
+  assert.equal(inspection.coverage.evaluatedRuleCount,5)
+  assert.equal(inspection.assessmentStatus,'screened-human-inputs')
+  assert.equal(inspection.manufacturingApproved,false)
+  await assert.rejects(reviewManufacturingInputs(mapped.design,{...input,snapshotKey:'wrong'}))
+  await assert.rejects(reviewManufacturingInputs(mapped.design,{...input,acknowledged:false}))
+  const invalid = structuredClone(input); invalid.groups[0].dimensions.insideRadiusMm = null
+  await assert.rejects(reviewManufacturingInputs(mapped.design,invalid))
+  state.workflowState.sourceFreshness = 'changed'
+  assert.throws(() => state.applyReviewedManufacturingDesign(reviewed))
+  state.restoreControlledFixture()
+})
 
 function source(overrides = {}) {
   return {
@@ -38,6 +65,55 @@ function source(overrides = {}) {
     ...overrides,
   }
 }
+
+test('fictional supplier previews preserve unknown costs and never advance workflow evidence', () => {
+  const before = JSON.stringify(state.workflowState.supplierQuotes)
+  const preview = fictionalQuotePreview(250)
+  assert.equal(preview.sourceKind, 'fictional_fixture')
+  assert.equal(preview.designMatch, 'unresolved')
+  assert.equal(preview.quotes.length, 2)
+  for (const quote of preview.quotes) {
+    assert.equal(quote.fictional, true)
+    assert.equal(quote.shipping, null)
+    assert.equal(quote.tax, null)
+    assert.equal(quote.total, null)
+    assert.ok(quote.knownSubtotal > 0)
+  }
+  assert.equal(JSON.stringify(state.workflowState.supplierQuotes), before)
+  assert.throws(() => fictionalQuotePreview(1), { code: 'UNSUPPORTED_QUANTITY' })
+})
+
+test('native parameters never become inferred manufacturing roles or a passed inspection', async () => {
+  assert.equal(classifyInsightQuery('Run the manufacturing check').kind, 'inspect')
+  assert.equal(classifyInsightQuery('How were dimensions recognized?').kind, 'variables')
+  assert.equal(classifyInsightQuery('Load this Part Studio').kind, 'live_source')
+  const nativeDimensions = ['2*millimeter', '#radius', '0 mm', '-2 mm'].map((expression, index) => ({
+    featureId: `fillet-${index}`, featureName: 'wallThickness', featureType: 'fillet', parameterId: 'radius', expression,
+  }))
+  payload = source({ variables: [], nativeDimensions })
+  const mapped = mapOnshapeToDesign(payload, config, domain.design)
+  assert.deepEqual(mapped.design.features, [])
+  assert.deepEqual(mapped.provenance.discovery.mappings, [])
+  assert.deepEqual(mapped.design.nativeDimensions.map((item) => item.valueMm), [2, null, null, null])
+  assert.equal(mapped.design.manufacturingInputGaps.length, 5)
+  const inspection = evaluateCncManufacturability(mapped.design)
+  assert.equal(inspection.assessmentStatus, 'incomplete')
+  assert.equal(inspection.manufacturingApproved, false)
+  assert.equal(inspection.coverage.evaluatedRuleCount, 0)
+  assert.equal(inspection.coverage.skippedRules[0].inputGap.ruleId, 'CNC-R001')
+  assert.throws(() => validateReviewReadiness({ fixture: mapped.design, inspection }), { code: 'MANUFACTURING_INPUTS_REQUIRED' })
+  const snapshot = { design: mapped.design, provenance: mapped.provenance,
+    workflow: { findings: [], inspection, designSource: { sourceId: 'onshape-live' } } }
+  assert.match(composeInsightResponse({ kind: 'inspect' }, snapshot).text, /zero findings is not a pass/i)
+  assert.match(composeInsightResponse({ kind: 'measurements' }, snapshot).text, /No verified/)
+  assert.match(composeInsightResponse({ kind: 'explain' }, snapshot).text, /No manufacturing region/)
+  client.configureOnshapeExtensionContext(context)
+  await state.gate7Handlers.load_onshape_design({})
+  const result = await state.gate7Handlers.inspect_cnc_manufacturability({ severity: 'all' })
+  assert.equal(result.assessmentStatus, 'incomplete')
+  assert.equal(state.activeDesignContext().manufacturingInputGaps.length, 5)
+  assert.equal(state.activeDesignContext().nativeDimensions.length, 4)
+})
 
 test('initial load and refresh use exactly the configured panel context', async () => {
   calls = []

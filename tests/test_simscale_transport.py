@@ -7,7 +7,7 @@ from typing import Any
 from scripts.simscale_transport import SimScaleTransportClient, SimScaleTransportError
 
 
-PROJECT_ID = "11111111-1111-4111-8111-111111111111"
+PROJECT_ID = "1234123412341234"
 CAD_ID = "22222222-2222-4222-8222-222222222222"
 STATE_ID = "33333333-3333-4333-8333-333333333333"
 STEP = b"ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n"
@@ -29,6 +29,12 @@ class FakeResponse:
 
 
 class SimScaleTransportTests(unittest.TestCase):
+    def test_projects_use_numeric_strings_not_cad_uuids(self) -> None:
+        self.assertEqual(PROJECT_ID, SimScaleTransportClient(api_key='key', project_id=PROJECT_ID).project_id)
+        for invalid in (CAD_ID, 1234, '../project', '', '1' * 31):
+            with self.assertRaises(SimScaleTransportError):
+                SimScaleTransportClient(api_key='key', project_id=invalid)
+
     def test_storage_upload_and_import_follow_the_frozen_contract(self) -> None:
         requests: list[Any] = []
         responses = iter(

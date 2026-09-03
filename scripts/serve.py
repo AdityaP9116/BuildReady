@@ -7,6 +7,7 @@ import json
 import os
 import re
 import socket
+import sqlite3
 import threading
 import time
 import urllib.error
@@ -20,9 +21,11 @@ from urllib.parse import parse_qs, urlsplit
 try:
     from scripts.fea_service import FeaService, FeaServiceError, error_payload
     from scripts.evidence_api import dispatch as dispatch_evidence, local_store as local_evidence_store
+    from scripts.live_demo_preparation import cleanup_default_preparations
 except ModuleNotFoundError:  # Direct `python scripts/serve.py` execution.
     from fea_service import FeaService, FeaServiceError, error_payload
     from evidence_api import dispatch as dispatch_evidence, local_store as local_evidence_store
+    from live_demo_preparation import cleanup_default_preparations
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -312,17 +315,6 @@ def local_onshape_payload(query: dict[str, list[str]] | None = None) -> tuple[in
             "ONSHAPE_UNAVAILABLE", "The live Onshape source is unavailable.", 502, True
         )
 
-    variables: list[dict[str, str]] = []
-    collect_variables(features.get("features", features), variables)
-
-    if not variables:
-        release_inflight(cache_key)
-        return failure(
-            "ONSHAPE_NO_VARIABLES",
-            "The configured Part Studio exposes no named variables.",
-            502,
-        )
-
     if workspace_or_version == "w":
         microversion_id = features.get("microversionId") or (
             microversion_payload.get("microversion") if isinstance(microversion_payload, dict) else None
@@ -347,6 +339,28 @@ def local_onshape_payload(query: dict[str, list[str]] | None = None) -> tuple[in
             },
         }
 
+    # A later workspace revision lookup must not label an earlier feature read.
+    # Re-read from the immutable microversion when the response omitted its ID.
+    if not features.get("microversionId"):
+        try:
+            features = onshape_get(
+                f"/api/v6/partstudios/d/{document_id}/m/{microversion_id}/e/{element_id}/features"
+            )
+            if features.get("microversionId", microversion_id) != microversion_id:
+                raise ValueError("revision mismatch")
+        except FatalOnshapeError as error:
+            release_inflight(cache_key)
+            return failure(error.code, error.message, error.status, error.retryable)
+        except Exception:
+            release_inflight(cache_key)
+            return failure("ONSHAPE_REVISION_UNVERIFIED", "The immutable feature read could not be verified.", 502)
+    variables: list[dict[str, str]] = []
+    collect_variables(features.get("features", features), variables)
+    native_dimensions = collect_native_dimensions(features.get("features", []))
+    if not variables and not native_dimensions:
+        release_inflight(cache_key)
+        return failure("ONSHAPE_NO_VARIABLES", "No supported named or native dimension expressions were found.", 502)
+
     payload = {
         "ok": True,
         "source": "onshape-live",
@@ -364,6 +378,7 @@ def local_onshape_payload(query: dict[str, list[str]] | None = None) -> tuple[in
         "microversionId": microversion_id,
         "serializationVersion": features.get("serializationVersion"),
         "variables": variables,
+        "nativeDimensions": native_dimensions,
         "featureSummary": [
             {
                 "featureId": str(feature.get("featureId", ""))[:64] or None,
@@ -386,6 +401,46 @@ def local_onshape_payload(query: dict[str, list[str]] | None = None) -> tuple[in
     return 200, payload
 
 
+def collect_native_dimensions(features: Any) -> list[dict[str, Any]]:
+    """Inventory authored parameters, never infer their manufacturing role.
+
+    Blind solid extrusions and fillet radius expressions are useful candidates,
+    not measurements of final geometry. Suppressed and inactive extent values
+    must not participate. Sketch constraints require separate topology support.
+    """
+    found = []
+    for feature in features[:100] if isinstance(features, list) else []:
+        if not isinstance(feature, dict) or feature.get("suppressed"):
+            continue
+        feature_id = feature.get("featureId")
+        if not isinstance(feature_id, str) or not feature_id or len(feature_id) > 64:
+            continue
+        parameters = feature.get("parameters", [])
+        if not isinstance(parameters, list):
+            continue
+        by_id = {p.get("parameterId"): p for p in parameters if isinstance(p, dict) and isinstance(p.get("parameterId"), str)}
+        kind = feature.get("featureType")
+        if kind == "extrude" and by_id.get("bodyType", {}).get("value") == "SOLID" and by_id.get("endBound", {}).get("value") == "BLIND":
+            parameter_id = "depth"
+        elif kind == "fillet":
+            parameter_id = "radius"
+        else:
+            continue
+        expression = by_id.get(parameter_id, {}).get("expression")
+        if not isinstance(expression, str) or not expression or len(expression) > 64:
+            continue
+        found.append({
+            "featureId": feature_id,
+            "featureName": str(feature.get("name", "Unnamed feature"))[:80],
+            "featureType": kind,
+            "parameterId": parameter_id,
+            "expression": expression,
+            "semanticStatus": "unassigned",
+            "evidenceLevel": "authored-parameter-not-measured-geometry",
+        })
+    return found
+
+
 def collect_variables(node: Any, found: list[dict[str, Any]], depth: int = 0) -> None:
     if depth > MAX_DEPTH or len(found) >= MAX_VARIABLES or node is None:
         return
@@ -394,6 +449,8 @@ def collect_variables(node: Any, found: list[dict[str, Any]], depth: int = 0) ->
             collect_variables(item, found, depth + 1)
         return
     if not isinstance(node, dict):
+        return
+    if node.get("suppressed"):
         return
 
     parameters = node.get("parameters")
@@ -598,6 +655,10 @@ class LocalWorkspaceServer(ThreadingHTTPServer):
         except (FeaServiceError, OSError) as error:
             # No paths, source documents, credentials or provider responses in logs.
             print(f"FEA cleanup requires attention ({type(error).__name__}).")
+        try:
+            cleanup_default_preparations()
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f"Private CAD cleanup requires attention ({type(error).__name__}).")
 
 
 def main() -> None:

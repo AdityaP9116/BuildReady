@@ -5,6 +5,23 @@ if (!response.ok) throw new Error(`SUPPLIER_FIXTURE_LOAD_FAILED: HTTP ${response
 
 export const SUPPLIER_FIXTURES = Object.freeze(await response.json())
 
+/** Display-only placeholders, never attached to CAD/FEA or eligible as real offers. */
+export function fictionalQuotePreview(quantity = 250) {
+  if (!Number.isInteger(quantity) || !SUPPLIER_FIXTURES.supportedQuantities.includes(quantity)) {
+    throw new WorkflowRuleError('UNSUPPORTED_QUANTITY', 'Choose a supported fictional demonstration quantity.')
+  }
+  return Object.freeze({ sourceKind: 'fictional_fixture', designMatch: 'unresolved',
+    reviewStatus: 'not_supplier_evidence', simulationVerified: false, quantity,
+    quotes: Object.freeze(SUPPLIER_FIXTURES.suppliers.map((supplier) => Object.freeze({
+      supplierName: supplier.name, fictional: true, currency: supplier.currency,
+      unitPrice: supplier.unitPrices[String(quantity)], setup: supplier.toolingCost,
+      knownSubtotal: Number((supplier.unitPrices[String(quantity)] * quantity + supplier.toolingCost).toFixed(2)),
+      shipping: null, tax: null, total: null, leadTimeDays: supplier.leadTimeDays,
+      label: 'Illustrative placeholder — not priced for the active CAD and not a commercial offer',
+    }))),
+  })
+}
+
 function canonicalConfiguration({ fixture, proposal, decisionRecord, quantity }) {
   return [
     fixture.designId,

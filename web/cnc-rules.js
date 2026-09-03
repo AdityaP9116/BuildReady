@@ -28,11 +28,13 @@ function calculate(rule, feature) {
 
   if (specification.kind === 'minimum') {
     const observed = requireMeasurement(feature, specification.measurementKey, rule.ruleId)
+    const threshold = rule.ruleId === 'CNC-R001' && feature.inputReviewStatus === 'human-reviewed'
+      ? Math.max(specification.threshold, requireMeasurement(feature, 'selectedCutterRadiusMm', rule.ruleId)) : specification.threshold
     return {
-      violated: observed < specification.threshold,
+      violated: observed < threshold,
       observedMeasurements: { [specification.measurementKey]: observed },
-      threshold: { operator: 'minimum', value: specification.threshold, unit: specification.unit },
-      explanation: `${observed} ${specification.unit} < ${specification.threshold} ${specification.unit}`,
+      threshold: { operator: 'minimum', value: threshold, unit: specification.unit },
+      explanation: `${observed} ${specification.unit} < ${threshold} ${specification.unit}`,
     }
   }
 
@@ -93,7 +95,8 @@ export function evaluateRule(rule, feature, fixture) {
       : rule.consequence,
     recommendation: feature.inputReviewStatus === 'inferred-unreviewed'
       ? `Demonstration guidance, subject to input and applicability review: ${rule.recommendation}`
-      : rule.recommendation,
+      : rule.ruleId === 'CNC-R001' && feature.inputReviewStatus === 'human-reviewed'
+        ? `Review an inside radius of at least ${result.threshold.value} mm (the greater of the configured screening minimum and selected cutter radius), or a different tool/process.` : rule.recommendation,
     confidence: 'deterministic',
     inputReviewStatus: feature.inputReviewStatus ?? 'controlled-fixture',
     measurementProvenance: feature.measurementProvenance ?? null,
@@ -151,7 +154,8 @@ export function evaluateCncManufacturability(fixture, { severity = 'all' } = {})
         skippedRules.push(Object.freeze({
           ruleId,
           featureId: rule.featureId,
-          reason: 'required measurements were not confidently inferred',
+          reason: 'required measurements or geometry applicability are unresolved',
+          inputGap: fixture.manufacturingInputGaps?.find((gap) => gap.ruleId === ruleId) ?? null,
         }))
         return null
       }
@@ -166,6 +170,9 @@ export function evaluateCncManufacturability(fixture, { severity = 'all' } = {})
     revisionPrecondition: fixture.sourceSnapshotKey ?? `${fixture.designId}/${fixture.revisionId}@${fixture.fixtureVersion}`,
     ruleSetVersion: RULE_SET_VERSION,
     requestedSeverity: severity,
+    assessmentStatus: skippedRules.length ? 'incomplete' : fixture.sourceIdentity ? (fixture.manufacturingReview ? 'screened-human-inputs' : 'input-review-required') : 'screened-fixture',
+    manufacturingReview: fixture.manufacturingReview ?? null,
+    manufacturingApproved: false,
     coverage: Object.freeze({
       availableRules: RULE_EVALUATORS.length,
       evaluatedRuleIds: Object.freeze(evaluatedRuleIds),
@@ -189,6 +196,9 @@ export function compactInspectionResult(inspection, generatedAt) {
     ruleSetVersion: inspection.ruleSetVersion,
     generatedAt,
     counts: inspection.counts,
+    assessmentStatus: inspection.assessmentStatus,
+    manufacturingReview: inspection.manufacturingReview,
+    manufacturingApproved: false,
     coverage: inspection.coverage,
     findings: inspection.findings.map((finding) => ({
       findingId: finding.findingId,
