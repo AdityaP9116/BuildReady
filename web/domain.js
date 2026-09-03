@@ -12,7 +12,7 @@
  * @property {string} [evidenceReference]
  */
 
-/** @typedef {{ designId: string, revisionId: string, fixtureVersion: string, name: string, material: {id: string, label: string}, process: {id: string, label: string}, quantity: number, units: string, features: FeatureRecord[] }} DesignFixture */
+/** @typedef {{ designId: string, revisionId: string, fixtureVersion: string, name: string, material: {id: string, label: string}, process: {id: string, label: string}, quantity: number|null, units: string, features: FeatureRecord[] }} DesignFixture */
 /** @typedef {{ ruleId: string, version: string, title: string, severity: 'high'|'medium', featureId: string, calculation: object, consequence: string, recommendation: string, evidenceReferences: string[] }} RuleDefinition */
 /** @typedef {{ findingId: string, ruleId: string, ruleVersion: string, title: string, severity: 'high'|'medium', featureId: string, observedMeasurements: object, threshold: object, calculation: string, consequence: string, recommendation: string, confidence: 'deterministic', evidenceReferences: string[], highlightIds: string[] }} Finding */
 /** @typedef {{ proposalId: string, findingId: string, designId: string, baseRevisionId: string, status: string, changes: object[] }} Proposal */
@@ -29,7 +29,7 @@ function deepFreeze(value) {
 }
 
 async function loadDomainData() {
-  const response = await fetch(new URL('./cnc-domain.json?v=20260903-1', import.meta.url))
+  const response = await fetch(new URL('./cnc-domain.json?v=20260903-2', import.meta.url))
   if (!response.ok) {
     throw new Error(`DOMAIN_LOAD_FAILED: ${response.status}`)
   }

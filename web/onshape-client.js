@@ -7,9 +7,9 @@
  * that holds them.
  */
 
-import { mapOnshapeToDesign, OnshapeAdapterError } from './onshape-adapter.js?v=20260903-1'
-import { DESIGN_FIXTURE } from './domain.js?v=20260903-1'
-import { onshapeProxySearchParams } from './onshape-extension.js?v=20260903-1'
+import { mapOnshapeToDesign, OnshapeAdapterError } from './onshape-adapter.js?v=20260903-2'
+import { DESIGN_FIXTURE } from './domain.js?v=20260903-2'
+import { onshapeProxySearchParams } from './onshape-extension.js?v=20260903-2'
 
 const REQUEST_TIMEOUT_MS = 10000
 
@@ -27,7 +27,7 @@ function proxyUrl(config) {
 }
 
 function loadSourceConfig() {
-  sourceConfigPromise ??= fetch(new URL('./onshape-source.json', import.meta.url))
+  sourceConfigPromise ??= fetch(new URL('./onshape-source.json?v=20260903-2', import.meta.url))
     .then((response) => {
       if (!response.ok) throw new Error(`ONSHAPE_CONFIG_UNAVAILABLE: ${response.status}`)
       return response.json()
@@ -95,8 +95,8 @@ export async function fetchOnshapeDesign(signal) {
   }
 
   try {
-    // The fixture supplies context Onshape variables do not describe: material,
-    // process, quantity, feature labels, and highlight targets.
+    // The fixture supplies optional visual metadata only. The adapter explicitly
+    // leaves live material and production quantity unspecified.
     return mapOnshapeToDesign(payload, config, DESIGN_FIXTURE)
   } catch (error) {
     if (error instanceof OnshapeAdapterError) {

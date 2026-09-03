@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "ruleSetVersion": "cnc-demo-1.0.0",
-  "ruleSetScope": "Controlled demonstration thresholds; not production machining guidance.",
+  "ruleSetVersion": "cnc-dfm-1.1.0",
+  "ruleSetScope": "Configurable CNC screening thresholds; final machining decisions require engineering review.",
   "proposalPolicy": {
     "policyVersion": "radius-preview-1.0.0",
     "featureId": "inside-pocket-corner",
@@ -87,9 +87,9 @@
       "severity": "high",
       "featureId": "inside-pocket-corner",
       "calculation": { "kind": "minimum", "measurementKey": "insideRadiusMm", "threshold": 3.5, "unit": "mm" },
-      "consequence": "The selected 3.0 mm cutter cannot produce the 1.0 mm internal radius without a tool or geometry change.",
+      "consequence": "The inside radius is below the configured cutter-clearance limit and may require a smaller tool or a geometry change.",
       "recommendation": "Increase the inside corner radius to at least 3.5 mm, or select a smaller cutter.",
-      "evidenceReferences": ["fixture://BRKT-001/B/features/inside-pocket-corner", "ruleset://cnc-demo-1.0.0/CNC-R001"]
+      "evidenceReferences": ["fixture://BRKT-001/B/features/inside-pocket-corner", "ruleset://cnc-dfm-1.1.0/CNC-R001"]
     },
     {
       "ruleId": "CNC-R002",
@@ -98,9 +98,9 @@
       "severity": "medium",
       "featureId": "deep-pocket",
       "calculation": { "kind": "maximum_ratio", "numeratorKey": "depthMm", "denominatorKey": "minWidthMm", "threshold": 3.0, "unit": "ratio" },
-      "consequence": "The narrow, deep pocket increases tool deflection and access risk in the controlled process model.",
+      "consequence": "A narrow, deep pocket can increase tool deflection and make chip removal or tool access more difficult.",
       "recommendation": "Reduce pocket depth, increase its minimum width, or review a different machining strategy.",
-      "evidenceReferences": ["fixture://BRKT-001/B/features/deep-pocket", "ruleset://cnc-demo-1.0.0/CNC-R002"]
+      "evidenceReferences": ["fixture://BRKT-001/B/features/deep-pocket", "ruleset://cnc-dfm-1.1.0/CNC-R002"]
     },
     {
       "ruleId": "CNC-R003",
@@ -109,9 +109,9 @@
       "severity": "high",
       "featureId": "thin-wall",
       "calculation": { "kind": "minimum", "measurementKey": "thicknessMm", "threshold": 1.5, "unit": "mm" },
-      "consequence": "The wall is more susceptible to deflection, chatter, or damage during the controlled CNC scenario.",
+      "consequence": "A thin wall can be more susceptible to deflection, chatter, or damage during machining.",
       "recommendation": "Increase the wall thickness to at least 1.5 mm or request an engineering review.",
-      "evidenceReferences": ["fixture://BRKT-001/B/features/thin-wall", "ruleset://cnc-demo-1.0.0/CNC-R003"]
+      "evidenceReferences": ["fixture://BRKT-001/B/features/thin-wall", "ruleset://cnc-dfm-1.1.0/CNC-R003"]
     },
     {
       "ruleId": "CNC-R004",
@@ -122,7 +122,7 @@
       "calculation": { "kind": "maximum_ratio", "numeratorKey": "depthMm", "denominatorKey": "diameterMm", "threshold": 4.0, "unit": "ratio" },
       "consequence": "The hole may require specialized drilling cycles, chip evacuation, or additional setup in this model.",
       "recommendation": "Reduce the hole depth, increase its diameter, or review a deep-hole drilling process.",
-      "evidenceReferences": ["fixture://BRKT-001/B/features/deep-drilled-hole", "ruleset://cnc-demo-1.0.0/CNC-R004"]
+      "evidenceReferences": ["fixture://BRKT-001/B/features/deep-drilled-hole", "ruleset://cnc-dfm-1.1.0/CNC-R004"]
     },
     {
       "ruleId": "CNC-R005",
@@ -133,7 +133,7 @@
       "calculation": { "kind": "minimum", "measurementKey": "tolerancePlusMinusMm", "threshold": 0.05, "unit": "mm" },
       "consequence": "The tolerance may add inspection, finishing, and cost without a documented functional need.",
       "recommendation": "Relax the tolerance to ±0.05 mm or record the functional requirement for supplier review.",
-      "evidenceReferences": ["fixture://BRKT-001/B/features/mounting-hole-tolerance", "ruleset://cnc-demo-1.0.0/CNC-R005"]
+      "evidenceReferences": ["fixture://BRKT-001/B/features/mounting-hole-tolerance", "ruleset://cnc-dfm-1.1.0/CNC-R005"]
     }
   ]
 }

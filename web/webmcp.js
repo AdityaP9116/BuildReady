@@ -1,6 +1,6 @@
-import { activeDesign, activeDesignSource, activeSnapshotKey, gate7Handlers, setRegistrationState, workflowState } from './state.js?v=20260903-1'
-import { PROPOSAL_POLICY } from './domain.js?v=20260903-1'
-import { feaHandlers, feaState } from './fea-state.js?v=20260903-1'
+import { activeDesign, activeDesignSource, activeSnapshotKey, gate7Handlers, setRegistrationState, workflowState } from './state.js?v=20260903-2'
+import { PROPOSAL_POLICY } from './domain.js?v=20260903-2'
+import { feaHandlers, feaState } from './fea-state.js?v=20260903-2'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
 /** @typedef {{ name: string, title: string, description: string, inputSchema: object, annotations: object, execute: Function }} WebMcpTool */

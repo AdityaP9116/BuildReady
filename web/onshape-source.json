@@ -14,6 +14,44 @@
     "partialCoverage": true,
     "note": "BuildReady inventories every literal length variable and infers manufacturing roles from names and feature provenance. No exact variable names are required. Ambiguous values are left unmapped."
   },
+  "measurementGroups": [
+    {
+      "featureId": "inside-pocket-corner",
+      "label": "Inside pocket corner",
+      "ruleId": "CNC-R001",
+      "dimensions": { "insideRadiusMm": "cornerRadius", "selectedCutterRadiusMm": "cutterRadius" }
+    },
+    {
+      "featureId": "deep-pocket",
+      "label": "Deep pocket",
+      "ruleId": "CNC-R002",
+      "dimensions": { "depthMm": "pocketDepth", "minWidthMm": "pocketWidth" }
+    },
+    {
+      "featureId": "thin-wall",
+      "label": "Thin wall",
+      "ruleId": "CNC-R003",
+      "dimensions": { "thicknessMm": "wallThickness" }
+    },
+    {
+      "featureId": "deep-drilled-hole",
+      "label": "Deep drilled hole",
+      "ruleId": "CNC-R004",
+      "dimensions": { "depthMm": "deepHoleDepth", "diameterMm": "deepHoleDiameter" }
+    },
+    {
+      "featureId": "mounting-hole-tolerance",
+      "label": "Mounting-hole tolerance",
+      "ruleId": "CNC-R005",
+      "dimensions": { "diameterMm": "mountHoleDiameter", "tolerancePlusMinusMm": "mountTolerance" }
+    }
+  ],
+  "reviewContext": {
+    "processId": "cnc-screening",
+    "processLabel": "CNC milling screening",
+    "material": "not-provided-by-variable-api",
+    "quantity": "not-provided-by-variable-api"
+  },
   "writeBackPolicy": {
     "policyVersion": "onshape-writeback-1.0.0",
     "semanticRole": "cornerRadius",

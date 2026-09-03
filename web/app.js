@@ -10,23 +10,23 @@ import {
   setOnshapeAvailability,
   workflowState,
   setActiveRoute,
-} from './state.js?v=20260903-1'
+} from './state.js?v=20260903-2'
 import {
   configureOnshapeExtensionContext,
   onshapeSourceAvailable,
-} from './onshape-client.js?v=20260903-1'
+} from './onshape-client.js?v=20260903-2'
 import {
   connectOnshapeExtension,
   parseOnshapeExtensionContext,
-} from './onshape-extension.js?v=20260903-1'
-import { mountBracketViewer } from './bracket-viewer.js?v=20260903-1'
+} from './onshape-extension.js?v=20260903-2'
+import { mountBracketViewer } from './bracket-viewer.js?v=20260903-2'
 import {
   executeGate7Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
-} from './webmcp.js?v=20260903-1'
-import { serializeReviewPackageMarkdown } from './review-package.js?v=20260903-1'
-import { toolErrorEnvelope } from './error-contract.js?v=20260903-1'
+} from './webmcp.js?v=20260903-2'
+import { serializeReviewPackageMarkdown } from './review-package.js?v=20260903-2'
+import { toolErrorEnvelope } from './error-contract.js?v=20260903-2'
 import {
   approveAndSubmitHuman,
   feaState,
@@ -35,8 +35,9 @@ import {
   readSimulationResults,
   readSimulationStatus,
   resetFeaState,
-} from './fea-state.js?v=20260903-1'
-import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-1'
+} from './fea-state.js?v=20260903-2'
+import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-2'
+import { CNC_RULES, PROPOSAL_POLICY } from './domain.js?v=20260903-2'
 
 const routes = {
   '/': renderDesign,
@@ -379,10 +380,10 @@ function renderOnshapePanel() {
 
       <section class="panel-check" aria-labelledby="panel-check-title">
         <div>
-          <h2 id="panel-check-title">Manufacturability check</h2>
-          <p>Review the dimensions this model provides against five configured CNC checks.</p>
+          <h2 id="panel-check-title">Check this model</h2>
+          <p id="extension-check-description">BuildReady will run the checks supported by the dimensions it recognizes.</p>
         </div>
-        <button type="button" id="panel-inspect" data-tool="inspect_cnc_manufacturability">Run check</button>
+        <button type="button" id="panel-inspect" data-tool="inspect_cnc_manufacturability">Check model</button>
         <output class="tool-output panel-output" id="tool-output" aria-live="polite">Ready when you are.</output>
       </section>
 
@@ -398,15 +399,6 @@ function renderOnshapePanel() {
       ${renderModelInsightAssistant('embedded')}
 
       <details class="source-discovery panel-discovery"><summary>How dimensions were recognized</summary><div id="source-discovery-content"></div></details>
-
-      <details class="panel-more-actions">
-        <summary>Review and export</summary>
-        <div class="panel-actions" aria-label="Review and export actions">
-          <button type="button" class="secondary-button" id="quote-comparison-button" data-tool="prepare_quote_comparison" disabled>Compare sample suppliers</button>
-          <button type="button" class="secondary-button" id="panel-package" data-tool="generate_review_package" disabled>Create review package</button>
-          <button type="button" class="quiet-button" id="reset-demo-button">Clear results</button>
-        </div>
-      </details>
 
       <section class="proposal-card panel-proposal" id="proposal-card" aria-labelledby="proposal-title" hidden>
         <div class="proposal-heading"><div><p class="eyebrow">Human decision required</p><h2 id="proposal-title">Inside-radius preview</h2></div><span id="proposal-status">Pending</span></div>
@@ -424,6 +416,7 @@ function renderOnshapePanel() {
 
       <details class="panel-audit"><summary>Technical details</summary>
         <dl class="agent-metrics"><div><dt>Model version</dt><dd id="extension-revision">—</dd></div><div><dt>Tools</dt><dd id="registered-tool-count">0</dd></div><div><dt>Last action</dt><dd id="last-tool-call">None</dd></div></dl>
+        <button type="button" class="quiet-button" id="reset-demo-button">Clear results</button>
         <span id="active-route" hidden>/onshape-panel</span>
         <span class="registration-badge" id="registration-badge">Embedded controls</span>
         <ol id="audit-events"><li>No actions recorded.</li></ol>
@@ -783,7 +776,7 @@ function updateDiagnostics() {
   if (findingCount && findingsList) renderFindings(findingCount, findingsList)
   if (issueDetailsButton) issueDetailsButton.disabled = !workflowState.selectedFindingId
   if (previewRadiusButton) {
-    previewRadiusButton.disabled = !workflowState.findings.some((finding) => finding.ruleId === 'CNC-R001')
+    previewRadiusButton.disabled = !workflowState.findings.some((finding) => finding.ruleId === PROPOSAL_POLICY.ruleId)
       || Boolean(workflowState.proposedChange)
   }
   if (quoteComparisonButton) {
@@ -815,7 +808,16 @@ function updateOnshapePanel() {
     ? `${provenance.inferredMeasurementCount} of ${provenance.measurementCount}`
     : '—'
   const coverage = document.querySelector('#extension-coverage')
-  if (coverage) coverage.textContent = provenance ? `${provenance.applicableRuleCount} of 5` : '—'
+  const availableRuleCount = provenance?.availableRuleCount
+    ?? workflowState.inspection?.coverage?.availableRules
+    ?? CNC_RULES.length
+  if (coverage) coverage.textContent = provenance ? `${provenance.applicableRuleCount} of ${availableRuleCount}` : '—'
+  const checkDescription = document.querySelector('#extension-check-description')
+  if (checkDescription && provenance) {
+    checkDescription.textContent = provenance.applicableRuleCount === availableRuleCount
+      ? `All ${availableRuleCount} configured CNC checks can run on the recognized dimensions.`
+      : `${provenance.applicableRuleCount} of ${availableRuleCount} checks can run. Missing or ambiguous dimensions are skipped.`
+  }
   renderDiscoverySummary(provenance)
 
   const connected = onshapeExtensionStatus.phase === 'connected'
@@ -858,7 +860,8 @@ function renderDesignSource() {
   const provenance = document.querySelector('#source-provenance')
   provenance.hidden = !isLive
   if (isLive) {
-    provenance.textContent = `Document: ${designSource.provenance.documentName} · ${designSource.provenance.inferredMeasurementCount}/${designSource.provenance.measurementCount} variables inferred · ${designSource.provenance.applicableRuleCount}/5 rules applicable · retrieved ${designSource.provenance.retrievedAt}`
+    const availableRuleCount = designSource.provenance.availableRuleCount ?? '—'
+    provenance.textContent = `Document: ${designSource.provenance.documentName} · ${designSource.provenance.inferredMeasurementCount}/${designSource.provenance.measurementCount} dimensions recognized · ${designSource.provenance.applicableRuleCount}/${availableRuleCount} checks available · retrieved ${designSource.provenance.retrievedAt}`
   }
   const discovery = document.querySelector('#source-discovery')
   if (discovery) discovery.hidden = !isLive
@@ -1380,8 +1383,8 @@ function bindManualToolControls() {
           ? { findingId: workflowState.selectedFindingId }
           : toolName === 'preview_radius_change'
             ? {
-              findingId: workflowState.findings.find((finding) => finding.ruleId === 'CNC-R001')?.findingId,
-              proposedRadiusMm: 3.5,
+              findingId: workflowState.findings.find((finding) => finding.ruleId === PROPOSAL_POLICY.ruleId)?.findingId,
+              proposedRadiusMm: PROPOSAL_POLICY.recommendedRadiusMm,
             }
           : toolName === 'prepare_quote_comparison'
             ? { quantity: activeDesign().quantity }

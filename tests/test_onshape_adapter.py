@@ -32,7 +32,7 @@ UNIT_TO_MM = {
     "in": 25.4,
     "ft": 304.8,
 }
-QUANTITY_PATTERN = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*\*?\s*([A-Za-z]+)\s*$")
+QUANTITY_PATTERN = re.compile(r"^\s*(-?(?:\d+(?:\.\d+)?|\d+\s*/\s*\d+))\s*\*?\s*([A-Za-z]+)\s*$")
 
 
 class OnshapeAdapterError(ValueError):
@@ -46,7 +46,15 @@ def parse_quantity_mm(expression: str) -> float:
     factor = UNIT_TO_MM.get(match.group(2).lower())
     if factor is None:
         raise OnshapeAdapterError("ONSHAPE_BAD_QUANTITY")
-    return round(float(match.group(1)) * factor, 3)
+    magnitude_text = match.group(1)
+    if "/" in magnitude_text:
+        numerator, denominator = (float(part) for part in magnitude_text.split("/"))
+        if denominator == 0:
+            raise OnshapeAdapterError("ONSHAPE_BAD_QUANTITY")
+        magnitude = numerator / denominator
+    else:
+        magnitude = float(magnitude_text)
+    return round(magnitude * factor, 3)
 
 
 def collect_variables(node: Any, found: list[dict[str, str]] | None = None) -> list[dict[str, str]]:
@@ -90,6 +98,7 @@ class QuantityParsingTests(unittest.TestCase):
         self.assertEqual(parse_quantity_mm("0.02 mm"), 0.02)
         self.assertEqual(parse_quantity_mm("2.5cm"), 25.0)
         self.assertEqual(parse_quantity_mm("1 in"), 25.4)
+        self.assertEqual(parse_quantity_mm("1/8 in"), 3.175)
 
     def test_arithmetic_and_variable_references_are_rejected(self) -> None:
         for expression in ("#insideRadius", "1 mm + 2 mm", "2 * #r", "1 furlong", "", "12"):
@@ -187,6 +196,9 @@ class SemanticDiscoveryContractTests(unittest.TestCase):
         self.assertEqual(roles["cornerRadius"], "internal_relief_rad")
         self.assertEqual(roles["mountTolerance"], "fixture_bolt_fit_tol")
         self.assertEqual(mapped["provenance"]["applicableRuleCount"], 5)
+        self.assertEqual(mapped["provenance"]["availableRuleCount"], 5)
+        self.assertEqual(mapped["design"]["material"]["id"], "unspecified")
+        self.assertIsNone(mapped["design"]["quantity"])
         self.assertIn("stock_length", {item["name"] for item in discovery["unmapped"]})
 
     def test_partial_coverage_builds_only_complete_rule_groups(self) -> None:

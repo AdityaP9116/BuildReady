@@ -72,7 +72,7 @@ class BuildTests(unittest.TestCase):
 
         self.assertIn('"designId": "BRKT-001"', domain)
         self.assertIn('"revisionId": "B"', domain)
-        self.assertIn('"ruleSetVersion": "cnc-demo-1.0.0"', domain)
+        self.assertIn('"ruleSetVersion": "cnc-dfm-1.1.0"', domain)
         self.assertEqual(len(domain_data["rules"]), 5)
         for evaluator in (
             "evaluateInternalCornerRadius",

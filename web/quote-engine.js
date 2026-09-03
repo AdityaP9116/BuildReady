@@ -1,4 +1,4 @@
-import { revisionPrecondition, WorkflowRuleError } from './workflow-rules.js?v=20260903-1'
+import { revisionPrecondition, WorkflowRuleError } from './workflow-rules.js?v=20260903-2'
 
 const response = await fetch(new URL('./supplier-fixtures.json', import.meta.url))
 if (!response.ok) throw new Error(`SUPPLIER_FIXTURE_LOAD_FAILED: HTTP ${response.status}`)

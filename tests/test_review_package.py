@@ -61,7 +61,9 @@ class ReviewPackageContractTests(unittest.TestCase):
         adapter = (ROOT / "web" / "onshape-adapter.js").read_text(encoding="utf-8")
         rules = (ROOT / "web" / "cnc-rules.js").read_text(encoding="utf-8")
         self.assertIn("onshape://documents/", adapter)
-        self.assertIn("feature.evidenceReference ?? rule.evidenceReferences[0]", rules)
+        self.assertIn("feature.evidenceReference ?? policyEvidence[0]", rules)
+        self.assertIn("!reference.startsWith('fixture://')", rules)
+        self.assertIn("new Set", rules)
         self.assertIn("source: activeDesignSource()", self.state)
         self.assertIn("snapshotKey: activeSnapshotKey()", self.state)
 

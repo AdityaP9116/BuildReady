@@ -1,4 +1,4 @@
-import { CNC_RULES, RULE_SET_VERSION } from './domain.js?v=20260903-1'
+import { CNC_RULES, RULE_SET_VERSION } from './domain.js?v=20260903-2'
 
 export class RuleInputError extends Error {
   constructor(code, message, ruleId = null) {
@@ -11,7 +11,7 @@ export class RuleInputError extends Error {
 
 function requireMillimeters(fixture) {
   if (fixture?.units !== 'millimeters') {
-    throw new RuleInputError('UNSUPPORTED_UNITS', 'the CNC demo evaluator requires millimeters.')
+    throw new RuleInputError('UNSUPPORTED_UNITS', 'CNC screening requires millimeter-normalized measurements.')
   }
 }
 
@@ -69,6 +69,15 @@ export function evaluateRule(rule, feature, fixture) {
     return null
   }
 
+  const isLiveOnshapeEvidence = feature.evidenceReference?.startsWith('onshape://')
+  const policyEvidence = rule.evidenceReferences.filter((reference) => (
+    !isLiveOnshapeEvidence || !reference.startsWith('fixture://')
+  ))
+  const evidenceReferences = [...new Set([
+    feature.evidenceReference ?? policyEvidence[0],
+    ...policyEvidence,
+  ].filter(Boolean))]
+
   return Object.freeze({
     findingId: `finding-${fixture.designId}-${fixture.revisionId}-${rule.ruleId}`,
     ruleId: rule.ruleId,
@@ -82,10 +91,7 @@ export function evaluateRule(rule, feature, fixture) {
     consequence: rule.consequence,
     recommendation: rule.recommendation,
     confidence: 'deterministic',
-    evidenceReferences: Object.freeze([
-      feature.evidenceReference ?? rule.evidenceReferences[0],
-      ...rule.evidenceReferences.slice(1),
-    ]),
+    evidenceReferences: Object.freeze(evidenceReferences),
     highlightIds: Object.freeze([...feature.highlightIds]),
   })
 }
@@ -118,13 +124,10 @@ export function evaluateExcessiveTolerance(feature, fixture) {
   return evaluateRule(ruleById('CNC-R005'), feature, fixture)
 }
 
-const RULE_EVALUATORS = Object.freeze([
-  Object.freeze({ ruleId: 'CNC-R001', evaluate: evaluateInternalCornerRadius }),
-  Object.freeze({ ruleId: 'CNC-R002', evaluate: evaluatePocketAspectRatio }),
-  Object.freeze({ ruleId: 'CNC-R003', evaluate: evaluateThinWall }),
-  Object.freeze({ ruleId: 'CNC-R004', evaluate: evaluateHoleDepthRatio }),
-  Object.freeze({ ruleId: 'CNC-R005', evaluate: evaluateExcessiveTolerance }),
-])
+const RULE_EVALUATORS = Object.freeze(CNC_RULES.map((rule) => Object.freeze({
+  ruleId: rule.ruleId,
+  evaluate: (feature, fixture) => evaluateRule(rule, feature, fixture),
+})))
 
 export function evaluateCncManufacturability(fixture, { severity = 'all' } = {}) {
   if (!['all', 'high', 'medium'].includes(severity)) {

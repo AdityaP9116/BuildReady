@@ -257,7 +257,7 @@ The credential-free live transport boundary is implemented in `scripts/onshape_e
 
 ### Controlled rule set
 
-The machine-readable fixture and rule definitions live in `web/cnc-domain.json`. Rule set `cnc-demo-1.0.0` intentionally freezes challenge-specific assumptions so identical fixture input produces identical findings. These thresholds are demonstration data, not production machining guidance.
+The machine-readable fixture and rule definitions live in `web/cnc-domain.json`. Rule set `cnc-dfm-1.1.0` intentionally freezes challenge-specific assumptions so identical fixture input produces identical findings. These thresholds are demonstration data, not production machining guidance.
 
 The default BRKT-001-B fixture produces two high- and three medium-severity findings. Each finding includes its rule/version, feature ID, observed measurements, threshold, calculation, consequence, recommendation, deterministic confidence, evidence references, and future 3D highlight IDs. The tool response is a compact envelope kept below 1,500 serialized characters; the complete finding records remain in visible page state.
 
