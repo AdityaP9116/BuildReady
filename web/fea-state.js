@@ -4,9 +4,9 @@ import {
   appendAuditEvent,
   recordToolCall,
   setSimulationEvidence,
-} from './state.js'
-import { FEA_DOMAIN } from './fea-domain.js'
-import { createStudyManifest } from './fea-validation.js'
+} from './state.js?v=20260903-1'
+import { FEA_DOMAIN } from './fea-domain.js?v=20260903-1'
+import { createStudyManifest } from './fea-validation.js?v=20260903-1'
 import {
   approveFeaStudy,
   getFeaCapabilities,
@@ -15,7 +15,7 @@ import {
   getFeaStudy,
   postActiveFeaSnapshot,
   postFeaStudy,
-} from './fea-client.js'
+} from './fea-client.js?v=20260903-1'
 
 export const feaState = {
   capabilities: null,

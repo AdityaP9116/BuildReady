@@ -1,6 +1,6 @@
-import { activeDesign, activeDesignSource, activeSnapshotKey, gate7Handlers, setRegistrationState, workflowState } from './state.js'
-import { PROPOSAL_POLICY } from './domain.js'
-import { feaHandlers, feaState } from './fea-state.js'
+import { activeDesign, activeDesignSource, activeSnapshotKey, gate7Handlers, setRegistrationState, workflowState } from './state.js?v=20260903-1'
+import { PROPOSAL_POLICY } from './domain.js?v=20260903-1'
+import { feaHandlers, feaState } from './fea-state.js?v=20260903-1'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
 /** @typedef {{ name: string, title: string, description: string, inputSchema: object, annotations: object, execute: Function }} WebMcpTool */
@@ -331,12 +331,17 @@ function simulationTools() {
 
 export function gate7Tools(route = '/design') {
   if (route === '/simulation') return simulationTools()
+  if (route === '/onshape-panel' && workflowState.supplierQuotes.length === 2) {
+    return workflowState.reviewPackage
+      ? Object.freeze([])
+      : Object.freeze([reviewPackageTool])
+  }
   if (route === '/suppliers') {
     return workflowState.supplierQuotes.length === 2 && !workflowState.reviewPackage
       ? Object.freeze([reviewPackageTool])
       : Object.freeze([])
   }
-  if (route !== '/design') return Object.freeze([])
+  if (!['/design', '/onshape-panel'].includes(route)) return Object.freeze([])
   const tools = [designContextTool(), inspectionTool()]
   // Offered only while nothing derived exists yet: loading a different design
   // discards findings, so the tool disappears once there is work to lose.
@@ -388,7 +393,10 @@ export function cleanupWebMcpTools() {
 export async function synchronizeWebMcpTools(route) {
   cleanupWebMcpTools()
 
-  if (!webMcpAvailable()) {
+  // The extension is cross-origin framed by Onshape. Keep WebMCP on the
+  // standalone top-level route; embedded controls call the same handlers
+  // directly and never depend on parent-frame tool discovery.
+  if (!webMcpAvailable() || route === '/onshape-panel') {
     return
   }
 

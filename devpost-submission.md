@@ -60,6 +60,7 @@ Codex was used throughout planning and implementation to:
 6. **Traceable review package** — one conditional tool validates completeness and creates matching visible, JSON, and Markdown records.
 7. **Security and adversarial hardening** — strict schemas, structured errors, untrusted-content annotations, abort cleanup, CSP, permissions policy, and a 14-case prompt suite.
 8. **Guided product experience** — persistent progress/reset controls, onboarding, explicit trust guidance, keyboard access, reduced motion, and responsive layouts.
+9. **Embedded Model Insight assistant** — natural-language questions route onto the same audited state machine, with live Onshape grounding, feature-specific evidence, contextual follow-ups, per-revision history, transcript exports, and an enforced no-approval/no-CAD-write boundary.
 
 ## Architecture
 

@@ -1,6 +1,16 @@
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), tools=(self)
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
   Cross-Origin-Opener-Policy: same-origin
+
+/onshape-panel
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors https://cad.onshape.com https://*.onshape.com; form-action 'none'
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/*.js
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/*.css
+  Cache-Control: no-cache, max-age=0, must-revalidate

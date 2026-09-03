@@ -34,6 +34,11 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((output / "cnc-rules.js").is_file())
             self.assertTrue((output / "cnc-domain.json").is_file())
             self.assertTrue((output / "bracket-viewer.js").is_file())
+            self.assertTrue((output / "onshape-extension.js").is_file())
+            self.assertTrue((output / "onshape-discovery.js").is_file())
+            self.assertTrue((output / "insight-engine.js").is_file())
+            self.assertTrue((output / "insight-assistant.js").is_file())
+            self.assertTrue((output / "buildready-onshape-icon.svg").is_file())
             self.assertTrue((output / "workflow-rules.js").is_file())
             self.assertTrue((output / "quote-engine.js").is_file())
             self.assertTrue((output / "supplier-fixtures.json").is_file())
@@ -56,7 +61,7 @@ class BuildTests(unittest.TestCase):
     def test_javascript_defines_every_planned_route(self) -> None:
         javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
-        for route in ("/design", "/simulation", "/suppliers", "/review", "/about"):
+        for route in ("/design", "/simulation", "/suppliers", "/review", "/about", "/onshape-panel"):
             self.assertIn(f"'{route}'", javascript)
 
     def test_gate_five_webmcp_contracts_are_present(self) -> None:

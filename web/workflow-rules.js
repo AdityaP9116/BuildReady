@@ -1,4 +1,4 @@
-import { PROPOSAL_POLICY, RULE_SET_VERSION } from './domain.js'
+import { PROPOSAL_POLICY, RULE_SET_VERSION } from './domain.js?v=20260903-1'
 
 export class WorkflowRuleError extends Error {
   constructor(code, message, retryable = false) {

@@ -1,5 +1,5 @@
-import { RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js'
-import { revisionPrecondition, WorkflowRuleError } from './workflow-rules.js'
+import { RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js?v=20260903-1'
+import { revisionPrecondition, WorkflowRuleError } from './workflow-rules.js?v=20260903-1'
 
 export const REVIEW_PACKAGE_SCHEMA_VERSION = '1.2.0'
 export const REVIEW_DISCLAIMER = 'Controlled demonstration evidence only. This package is not production approval, a commercial quote, or manufacturing guidance.'

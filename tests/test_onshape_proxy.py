@@ -79,11 +79,16 @@ class MockOnshape:
                     return
 
                 if "/features" in self.path:
-                    self._send(200, {
+                    feature_payload = {
                         "features": [] if outer.mode == "empty" else FIXTURE["features"],
-                        "microversionId": FIXTURE["microversionId"],
                         "serializationVersion": FIXTURE["serializationVersion"],
-                    })
+                    }
+                    if outer.mode != "no_feature_microversion":
+                        feature_payload["microversionId"] = FIXTURE["microversionId"]
+                    self._send(200, feature_payload)
+                    return
+                if "/currentmicroversion" in self.path:
+                    self._send(200, {"microversion": FIXTURE["microversionId"]})
                     return
                 self._send(200, {"name": "Mock <script>x</script>", "modifiedAt": "2026-08-30T12:00:00Z"})
 
@@ -105,7 +110,9 @@ class OnshapeProxyTests(unittest.TestCase):
         self.mock = MockOnshape().__enter__()
         self.addCleanup(self.mock.__exit__)
 
-        self._saved = {k: os.environ.get(k) for k in (*ENVIRONMENT, "ONSHAPE_BASE_URL")}
+        self._saved = {k: os.environ.get(k) for k in (
+            *ENVIRONMENT, "ONSHAPE_BASE_URL", "ONSHAPE_ALLOWED_DOCUMENT_IDS"
+        )}
         os.environ.update(ENVIRONMENT)
         os.environ["ONSHAPE_BASE_URL"] = f"http://127.0.0.1:{self.mock.port}"
         self.addCleanup(self._restore_environment)
@@ -133,6 +140,12 @@ class OnshapeProxyTests(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertTrue(payload["ok"])
         self.assertEqual(9, len(payload["variables"]))
+        self.assertEqual(FIXTURE["microversionId"], payload["microversionId"])
+
+    def test_current_microversion_endpoint_is_used_when_features_omit_it(self) -> None:
+        self.mock.mode = "no_feature_microversion"
+        status, payload = serve.local_onshape_payload()
+        self.assertEqual(200, status)
         self.assertEqual(FIXTURE["microversionId"], payload["microversionId"])
 
     def test_bad_credentials_fail_fast_without_retrying(self) -> None:
@@ -248,6 +261,44 @@ class OnshapeProxyTests(unittest.TestCase):
         # UI renders it as text. Silent rewriting would hide tampering.
         self.assertIn("<script>", payload["document"]["name"])
         self.assertLessEqual(len(payload["document"]["name"]), 120)
+
+    def test_malformed_extension_context_never_reaches_onshape(self) -> None:
+        self.mock.request_count = 0
+        status, payload = serve.local_onshape_payload({
+            "documentId": [ENVIRONMENT["ONSHAPE_DOCUMENT_ID"]],
+            "workspaceOrVersion": ["invalid"],
+            "workspaceOrVersionId": [ENVIRONMENT["ONSHAPE_WORKSPACE_ID"]],
+            "elementId": [ENVIRONMENT["ONSHAPE_ELEMENT_ID"]],
+        })
+        self.assertEqual(400, status)
+        self.assertEqual("ONSHAPE_BAD_CONTEXT", payload["error"]["code"])
+        self.assertEqual(0, self.mock.request_count)
+
+    def test_unlisted_extension_document_is_forbidden_before_network(self) -> None:
+        self.mock.request_count = 0
+        status, payload = serve.local_onshape_payload({
+            "documentId": ["999999999999999999999999"],
+            "workspaceOrVersion": ["w"],
+            "workspaceOrVersionId": [ENVIRONMENT["ONSHAPE_WORKSPACE_ID"]],
+            "elementId": [ENVIRONMENT["ONSHAPE_ELEMENT_ID"]],
+        })
+        self.assertEqual(403, status)
+        self.assertEqual("ONSHAPE_CONTEXT_FORBIDDEN", payload["error"]["code"])
+        self.assertEqual(0, self.mock.request_count)
+
+    def test_allowlisted_extension_context_can_select_a_version(self) -> None:
+        document_id = "999999999999999999999999"
+        os.environ["ONSHAPE_ALLOWED_DOCUMENT_IDS"] = document_id
+        status, payload = serve.local_onshape_payload({
+            "documentId": [document_id],
+            "workspaceOrVersion": ["v"],
+            "workspaceOrVersionId": [ENVIRONMENT["ONSHAPE_WORKSPACE_ID"]],
+            "elementId": [ENVIRONMENT["ONSHAPE_ELEMENT_ID"]],
+        })
+        self.assertEqual(200, status)
+        self.assertEqual("v", payload["document"]["workspaceOrVersion"])
+        self.assertIsNone(payload["document"]["workspaceId"])
+        self.assertEqual(ENVIRONMENT["ONSHAPE_WORKSPACE_ID"], payload["document"]["versionId"])
 
 
 if __name__ == "__main__":

@@ -28,6 +28,11 @@ class SecurityAndEvaluationTests(unittest.TestCase):
         self.assertIn("tools=(self)", SECURITY_HEADERS["Permissions-Policy"])
         self.assertIn("object-src 'none'", SECURITY_HEADERS["Content-Security-Policy"])
         self.assertIn("frame-ancestors 'none'", SECURITY_HEADERS["Content-Security-Policy"])
+        self.assertIn("/onshape-panel", self.headers)
+        self.assertIn(
+            "frame-ancestors https://cad.onshape.com https://*.onshape.com",
+            self.headers,
+        )
 
     def test_error_envelope_is_bounded_and_machine_readable(self) -> None:
         for field in ("ok: false", "code", "message", "retryable"):
@@ -70,6 +75,30 @@ class SecurityAndEvaluationTests(unittest.TestCase):
             path.read_text(encoding="utf-8") for path in (ROOT / "web").glob("*.js")
         )
         self.assertNotIn("cad.onshape.com", browser_sources)
+
+    def test_onshape_extension_validates_context_origin_and_parent_messages(self) -> None:
+        extension = (ROOT / "web" / "onshape-extension.js").read_text(encoding="utf-8")
+        self.assertIn("server.hostname.endsWith('.onshape.com')", extension)
+        self.assertIn("event.source !== windowObject.parent", extension)
+        self.assertIn("event.origin !== context.serverOrigin", extension)
+        self.assertIn("context.serverOrigin)", extension)
+        self.assertNotIn("postMessage({ ...messageBase, messageName, ...extra }, '*')", extension)
+
+    def test_right_panel_does_not_depend_on_unsupported_microversion_substitution(self) -> None:
+        extension = (ROOT / "web" / "onshape-extension.js").read_text(encoding="utf-8")
+        parser = extension[
+            extension.index("export function parseOnshapeExtensionContext"):
+            extension.index("export function isEmbeddedWindow")
+        ]
+        self.assertNotIn("microversionId", parser)
+
+    def test_model_insight_renders_questions_and_evidence_as_text_only(self) -> None:
+        app = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+        engine = (ROOT / "web" / "insight-engine.js").read_text(encoding="utf-8")
+        self.assertIn("body.textContent = entry.text", app)
+        self.assertIn("reference.textContent = citation.reference", app)
+        self.assertIn("MAX_INSIGHT_QUERY_LENGTH = 500", engine)
+        self.assertNotIn("body.innerHTML = entry.text", app)
 
     def test_eval_suite_covers_success_failure_authority_and_injection(self) -> None:
         cases = self.eval_data["cases"]

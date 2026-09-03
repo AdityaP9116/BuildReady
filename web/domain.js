@@ -29,7 +29,7 @@ function deepFreeze(value) {
 }
 
 async function loadDomainData() {
-  const response = await fetch(new URL('./cnc-domain.json', import.meta.url))
+  const response = await fetch(new URL('./cnc-domain.json?v=20260903-1', import.meta.url))
   if (!response.ok) {
     throw new Error(`DOMAIN_LOAD_FAILED: ${response.status}`)
   }

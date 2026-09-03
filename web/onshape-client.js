@@ -7,12 +7,24 @@
  * that holds them.
  */
 
-import { mapOnshapeToDesign, OnshapeAdapterError } from './onshape-adapter.js'
-import { DESIGN_FIXTURE } from './domain.js'
+import { mapOnshapeToDesign, OnshapeAdapterError } from './onshape-adapter.js?v=20260903-1'
+import { DESIGN_FIXTURE } from './domain.js?v=20260903-1'
+import { onshapeProxySearchParams } from './onshape-extension.js?v=20260903-1'
 
 const REQUEST_TIMEOUT_MS = 10000
 
 let sourceConfigPromise = null
+let extensionContext = null
+
+export function configureOnshapeExtensionContext(context) {
+  extensionContext = context
+}
+
+function proxyUrl(config) {
+  const url = new URL(config.proxyEndpoint, window.location.origin)
+  if (extensionContext) url.search = onshapeProxySearchParams(extensionContext).toString()
+  return url
+}
 
 function loadSourceConfig() {
   sourceConfigPromise ??= fetch(new URL('./onshape-source.json', import.meta.url))
@@ -39,7 +51,7 @@ class OnshapeSourceError extends Error {
 export async function onshapeSourceAvailable() {
   try {
     const config = await loadSourceConfig()
-    const response = await fetch(config.proxyEndpoint, {
+    const response = await fetch(proxyUrl(config), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -61,7 +73,7 @@ export async function fetchOnshapeDesign(signal) {
 
   let response
   try {
-    response = await fetch(config.proxyEndpoint, {
+    response = await fetch(proxyUrl(config), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),

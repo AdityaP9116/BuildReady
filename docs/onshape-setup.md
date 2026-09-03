@@ -7,6 +7,12 @@ failure falls back to the fixture.
 
 There are three ways to run it, in increasing order of setup.
 
+To run BuildReady *inside* the Onshape user interface as a right-panel
+extension, complete the API connection below and then follow
+[`docs/onshape-extension.md`](onshape-extension.md). The extension uses the
+active Part Studio context supplied by Onshape, subject to an explicit server
+document allowlist.
+
 ---
 
 ## 1. Offline, with no Onshape account
@@ -67,14 +73,13 @@ uv run python scripts/onshape_probe.py inspect "https://cad.onshape.com/document
 ```
 
 The probe reports the Part Studios in the document, every feature it found, every
-named variable, and — the part that matters — which of BuildReady's nine
-measurements it can currently fill:
+named variable, and — the part that matters — which manufacturing roles
+BuildReady can infer:
 
 ```
-BuildReady dimension coverage:
-  [ok]      #insideRadius          -> inside-pocket-corner.insideRadiusMm
-  [missing] #pocketDepth           -> deep-pocket.depthMm
-  …
+BuildReady semantic inference:
+  [high  ] #internal_relief_rad -> cornerRadius (1.2 mm)
+  [high  ] #cavity_z_depth      -> pocketDepth (26 mm)
 ```
 
 Add `--raw` to dump the underlying feature list if you want to see exactly what
@@ -87,39 +92,53 @@ its geometry from variables is one where the numbers BuildReady measures are the
 same numbers the model is built from — so a finding refers to something real, and
 a future correction has one unambiguous place to be applied.
 
-Most existing models will show missing variables on the first probe. That is
-expected. You are not modelling anything new; you are naming quantities the model
-already has.
+Exact names are not required. BuildReady recognizes descriptive combinations of
+measurement and manufacturing context, resolves candidates without reusing one
+variable for two roles, and leaves ambiguous or unrelated values unmapped. Most
+existing models will still need a few descriptive variables because Onshape's
+feature list does not expose every design-intent quantity in a stable form.
 
-### Add the variables
+### Name the model intent descriptively
 
-In your Part Studio, use **Insert → Variable** (or a Variable Studio) for each
-name below, then reference those variables from the features that already control
-that geometry — the fillet's radius, the extrude's depth, the hole's diameter.
+In your Part Studio, use **Insert → Variable** (or a Variable Studio), then
+reference those variables from the features they control — the fillet radius,
+extrude depth, or hole diameter. These are examples, not required identifiers:
 
 | Variable | Describes | Example |
 | --- | --- | --- |
-| `insideRadius` | Internal corner radius of the pocket | `1 mm` |
-| `cutterRadius` | Radius of the intended end mill | `3 mm` |
-| `pocketDepth` | Depth of the deep pocket | `24 mm` |
-| `pocketMinWidth` | Narrowest width of that pocket | `6 mm` |
-| `wallThickness` | Thinnest wall | `0.8 mm` |
-| `holeDepth` | Depth of the deep drilled hole | `30 mm` |
-| `holeDiameter` | Diameter of that hole | `5 mm` |
-| `mountingHoleDiameter` | Diameter of the toleranced mounting hole | `8 mm` |
-| `mountingTolerance` | Tolerance band on that hole | `0.02 mm` |
+| `internal_relief_rad` | Internal corner radius of the pocket | `1.2 mm` |
+| `endmill_tool_rad` | Radius of the intended end mill | `3 mm` |
+| `cavity_z_depth` | Depth of the deep pocket | `26 mm` |
+| `cavity_min_span` | Narrowest width of that pocket | `14 mm` |
+| `rib_web_gauge` | Thinnest wall | `0.9 mm` |
+| `coolant_bore_depth` | Depth of the deep drilled hole | `34 mm` |
+| `coolant_bore_dia` | Diameter of that hole | `5 mm` |
+| `fixture_bolt_bore_dia` | Diameter of the mounting hole | `8 mm` |
+| `fixture_bolt_fit_tol` | Tolerance band on that hole | `0.018 mm` |
 
 Each must evaluate to a **literal length** such as `1 mm` or `0.25 in`.
 Expressions that reference other variables or do arithmetic are rejected rather
 than guessed at, so that every measurement BuildReady reports is unambiguous.
 
-The example values reproduce the five demonstration findings. Your own values
-will produce whatever findings your geometry actually earns — which is the point.
+The example values exercise all five rules. Your own descriptive names and values
+produce the coverage and findings your model actually supports.
+
+To create the repository's complex native test part automatically, use a key
+with document/Part Studio write scope for this one command:
+
+```bash
+uv run python scripts/create_onshape_demo.py --apply
+```
+
+The generated fixture includes 24 variables, seven sketches, seven extrudes,
+walls, bosses, ribs, through-holes, counterbores, and deep ports. Fifteen
+variables are deliberate distractors. Normal BuildReady runtime remains GET-only
+and should use read-only credentials.
 
 ### Run it
 
-Re-run the probe. When all nine report `[ok]`, it prints the three ids to add to
-`.env`:
+Re-run the probe. When at least one complete rule group is confidently inferred,
+it prints the three ids to add to `.env`:
 
 ```bash
 ONSHAPE_DOCUMENT_ID=…
@@ -173,6 +192,8 @@ offered, and the deployment behaves exactly as the fixture-only build.
 | Non-JSON body (captive portal, outage page) | Retried, then reported; never parsed as a model. |
 | Response larger than 8 MB | Rejected rather than buffered. |
 | Part Studio with no variables | `ONSHAPE_NO_VARIABLES`, distinct from an outage. |
+| No complete inferred measurement group | `ONSHAPE_NO_APPLICABLE_MEASUREMENTS`; no inspection is created. |
+| Partial semantic coverage | Supported rules run; skipped rules are reported in coverage. |
 | Repeated agent calls | Served from a 15-second cache; concurrent callers share one upstream read. |
 | Any of the above | The app stays on the controlled fixture with a visible explanation. |
 

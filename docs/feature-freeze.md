@@ -51,8 +51,9 @@ source is now in scope.
 
 - A read-only, allowlisted Onshape proxy holding credentials server-side
   (`functions/api/onshape/design.js`, mirrored locally in `scripts/serve.py`).
-- A pure mapping from Onshape Part Studio variables onto the existing design
-  contract (`web/onshape-adapter.js`).
+- Deterministic semantic discovery of arbitrary descriptive Part Studio variable
+  names plus mapping onto the existing design contract
+  (`web/onshape-discovery.js`, `web/onshape-adapter.js`).
 - One WebMCP tool, `load_onshape_design`, registered only when the proxy is
   reachable and only before an inspection exists.
 - A visible human control to load the live model or restore the fixture.
@@ -83,3 +84,17 @@ The user explicitly approved a new simulation stage after the original freeze. T
 **Still blocked from live mode.** The repository has a bounded read-only account probe, but no SimScale key or verified account/template evidence is configured. No STEP upload, project mutation, or paid run was attempted. `SIMULATION_PROVIDER=simscale` continues to fail closed until the manual and numerical checklist in `docs/simscale-setup.md` passes.
 
 **Authority boundary.** The agent may prepare, read, monitor, and compare. Only the visible engineer controls can acknowledge CAD sharing and compute use. Recorded metrics remain `indeterminate` and cannot support an engineering disposition.
+
+## Amendment 3 — grounded Model Insight assistant (2026-09-02)
+
+The conversational surface is an interaction layer over the already-audited
+workflow, not a new authority or engineering engine. It may route a bounded
+question to an existing handler and summarize the resulting active-revision
+evidence. It adds no machining thresholds, suppliers, approval path, CAD write,
+purchase action, or production claim.
+
+The amendment includes the embedded/standalone conversation UI, deterministic
+intent routing, feature resolution, contextual follow-ups, per-revision session
+history, evidence display, cancellation, and transcript exports. All responses
+remain subordinate to the existing deterministic rules and visible human-only
+decision boundary.

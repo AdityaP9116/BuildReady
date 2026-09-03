@@ -19,7 +19,7 @@
 
 const DEFAULT_BASE_URL = 'https://cad.onshape.com'
 const REQUEST_TIMEOUT_MS = 8000
-const MAX_VARIABLES = 40
+const MAX_VARIABLES = 100
 const MAX_NAME_LENGTH = 64
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 const MAX_ATTEMPTS = 3
@@ -86,7 +86,12 @@ function collectVariables(node, found, depth = 0) {
       }
     }
     if (name && expression && name.length <= MAX_NAME_LENGTH) {
-      found.push({ name, expression: expression.slice(0, MAX_NAME_LENGTH) })
+      found.push({
+        name,
+        expression: expression.slice(0, MAX_NAME_LENGTH),
+        sourceFeatureId: typeof node.featureId === 'string' ? node.featureId.slice(0, MAX_NAME_LENGTH) : null,
+        sourceFeatureName: typeof node.name === 'string' ? node.name.slice(0, MAX_NAME_LENGTH) : null,
+      })
     }
   }
 
@@ -166,7 +171,51 @@ async function onshapeGet(path, env) {
   throw lastError ?? new Error('Onshape request failed')
 }
 
-export async function onRequestGet({ env }) {
+function configuredContext(env, request) {
+  const url = new URL(request.url)
+  const supplied = ['documentId', 'workspaceOrVersion', 'workspaceOrVersionId', 'elementId']
+    .some((name) => url.searchParams.has(name))
+
+  if (!supplied) {
+    return {
+      documentId: env.ONSHAPE_DOCUMENT_ID,
+      workspaceOrVersion: 'w',
+      workspaceOrVersionId: env.ONSHAPE_WORKSPACE_ID,
+      elementId: env.ONSHAPE_ELEMENT_ID,
+    }
+  }
+
+  const context = {
+    documentId: url.searchParams.get('documentId'),
+    workspaceOrVersion: url.searchParams.get('workspaceOrVersion'),
+    workspaceOrVersionId: url.searchParams.get('workspaceOrVersionId'),
+    elementId: url.searchParams.get('elementId'),
+  }
+  if (![context.documentId, context.workspaceOrVersionId, context.elementId].every(
+    (id) => typeof id === 'string' && ID_PATTERN.test(id),
+  ) || !['w', 'v'].includes(context.workspaceOrVersion)) {
+    throw Object.assign(new Error('The Onshape extension context is malformed.'), {
+      code: 'ONSHAPE_BAD_CONTEXT',
+      httpStatus: 400,
+    })
+  }
+
+  // The browser controls context selection but never authorization. API-key
+  // deployments must explicitly allow every document the extension can read.
+  const allowedDocuments = new Set([
+    env.ONSHAPE_DOCUMENT_ID,
+    ...(env.ONSHAPE_ALLOWED_DOCUMENT_IDS || '').split(',').map((id) => id.trim()).filter(Boolean),
+  ])
+  if (!allowedDocuments.has(context.documentId)) {
+    throw Object.assign(new Error('This Onshape document is not allowed for this deployment.'), {
+      code: 'ONSHAPE_CONTEXT_FORBIDDEN',
+      httpStatus: 403,
+    })
+  }
+  return context
+}
+
+export async function onRequestGet({ env, request }) {
   const required = [
     'ONSHAPE_ACCESS_KEY',
     'ONSHAPE_SECRET_KEY',
@@ -179,14 +228,23 @@ export async function onRequestGet({ env }) {
     return failure('ONSHAPE_NOT_CONFIGURED', 'The live Onshape source is not configured.', 503)
   }
 
-  const documentId = env.ONSHAPE_DOCUMENT_ID
-  const workspaceId = env.ONSHAPE_WORKSPACE_ID
-  const elementId = env.ONSHAPE_ELEMENT_ID
-  if (![documentId, workspaceId, elementId].every((id) => ID_PATTERN.test(id))) {
+  let context
+  try {
+    context = configuredContext(env, request)
+  } catch (error) {
+    return failure(error.code, error.message, error.httpStatus)
+  }
+  const { documentId, workspaceOrVersion, workspaceOrVersionId, elementId } = context
+  if (![documentId, workspaceOrVersionId, elementId].every((id) => ID_PATTERN.test(id))) {
     return failure('ONSHAPE_NOT_CONFIGURED', 'The configured Onshape identifiers are malformed.', 503)
   }
-  const cacheKey = [env.ONSHAPE_BASE_URL || DEFAULT_BASE_URL, documentId, workspaceId, elementId].join('|')
-
+  const cacheKey = [
+    env.ONSHAPE_BASE_URL || DEFAULT_BASE_URL,
+    documentId,
+    workspaceOrVersion,
+    workspaceOrVersionId,
+    elementId,
+  ].join('|')
   const cachedResponse = cachedResponses.get(cacheKey)
   if (cachedResponse && Date.now() - cachedResponse.storedAt < CACHE_TTL_MS) {
     return jsonResponse({ ...cachedResponse.payload, cached: true })
@@ -196,9 +254,7 @@ export async function onRequestGet({ env }) {
   if (!inFlightReads.has(cacheKey)) {
     inFlightReads.set(
       cacheKey,
-      readDesign(env, documentId, workspaceId, elementId).finally(() => {
-        inFlightReads.delete(cacheKey)
-      }),
+      readDesign(env, context).finally(() => inFlightReads.delete(cacheKey)),
     )
   }
 
@@ -223,12 +279,19 @@ export async function onRequestGet({ env }) {
   }
 }
 
-async function readDesign(env, documentId, workspaceId, elementId) {
-  const scope = `/d/${documentId}/w/${workspaceId}/e/${elementId}`
+async function readDesign(env, context) {
+  const { documentId, workspaceOrVersion, workspaceOrVersionId, elementId } = context
+  const scope = `/d/${documentId}/${workspaceOrVersion}/${workspaceOrVersionId}/e/${elementId}`
+  const microversionPath = workspaceOrVersion === 'w'
+    ? `/api/v6/documents/d/${documentId}/w/${workspaceOrVersionId}/currentmicroversion`
+    : `/api/v6/documents/d/${documentId}/versions?offset=0&limit=0`
   const [features, metadata] = await Promise.all([
     onshapeGet(`/api/v6/partstudios${scope}/features`, env),
     onshapeGet(`/api/v6/documents/${documentId}`, env),
   ])
+  const microversionPayload = features?.microversionId
+    ? null
+    : await onshapeGet(microversionPath, env)
 
   const variables = collectVariables(features?.features ?? features, [])
   if (variables.length === 0) {
@@ -239,25 +302,48 @@ async function readDesign(env, documentId, workspaceId, elementId) {
     })
   }
 
+  const selectedVersion = workspaceOrVersion === 'v' && Array.isArray(microversionPayload)
+    ? microversionPayload.find((version) => version?.id === workspaceOrVersionId)
+    : null
+  const microversionId = features?.microversionId
+    ?? (workspaceOrVersion === 'w' ? microversionPayload?.microversion : selectedVersion?.microversion)
+  if (typeof microversionId !== 'string' || !ID_PATTERN.test(microversionId)) {
+    throw Object.assign(new Error('Onshape did not identify the current model revision.'), {
+      code: 'ONSHAPE_NO_MICROVERSION',
+      httpStatus: 502,
+    })
+  }
+
   return {
     ok: true,
     source: 'onshape-live',
     document: {
       documentId,
-      workspaceId,
+      workspaceId: workspaceOrVersion === 'w' ? workspaceOrVersionId : null,
+      versionId: workspaceOrVersion === 'v' ? workspaceOrVersionId : null,
+      workspaceOrVersion,
+      workspaceOrVersionId,
       elementId,
       // Externally authored text. Bounded here and treated as untrusted downstream.
       name: String(metadata?.name ?? 'Onshape document').slice(0, 120),
       modifiedAt: typeof metadata?.modifiedAt === 'string' ? metadata.modifiedAt : null,
-      href: `${env.ONSHAPE_BASE_URL || DEFAULT_BASE_URL}/documents/${documentId}/w/${workspaceId}/e/${elementId}`,
+      href: `${env.ONSHAPE_BASE_URL || DEFAULT_BASE_URL}/documents/${documentId}/${workspaceOrVersion}/${workspaceOrVersionId}/e/${elementId}`,
     },
     // Onshape increments this on every model change; BuildReady uses it as the
     // revision precondition so stale inspections can be detected.
-    microversionId: typeof features?.microversionId === 'string' ? features.microversionId : null,
+    microversionId,
     serializationVersion: typeof features?.serializationVersion === 'string'
       ? features.serializationVersion
       : null,
     variables,
+    featureSummary: (Array.isArray(features?.features) ? features.features : [])
+      .slice(0, 100)
+      .map((feature) => ({
+        featureId: typeof feature?.featureId === 'string' ? feature.featureId.slice(0, 64) : null,
+        featureType: typeof feature?.featureType === 'string' ? feature.featureType.slice(0, 48) : 'unknown',
+        name: typeof feature?.name === 'string' ? feature.name.slice(0, 80) : 'Unnamed feature',
+        suppressed: Boolean(feature?.suppressed),
+      })),
     retrievedAt: new Date().toISOString(),
   }
 }

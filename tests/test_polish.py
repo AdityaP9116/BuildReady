@@ -71,6 +71,23 @@ class ProductPolishTests(unittest.TestCase):
         self.assertIn("Gate 10 allowed work", freeze)
         self.assertIn("Final visual states to capture", freeze)
 
+    def test_model_insight_is_embedded_with_accessible_chat_controls(self) -> None:
+        for marker in (
+            "Ask BuildReady",
+            "Manufacturability check",
+            "How dimensions were recognized",
+            'id="insight-transcript" role="log"',
+            'id="insight-input"',
+            'id="insight-export-md"',
+            'id="insight-export-json"',
+            "bindModelInsightAssistant()",
+            "renderModelInsightAssistant('embedded')",
+        ):
+            self.assertIn(marker, self.app)
+        self.assertIn(".insight-assistant", self.styles)
+        self.assertIn(".insight-message[data-role='user']", self.styles)
+        self.assertIn("html.onshape-embedded-root", self.styles)
+
 
 if __name__ == "__main__":
     unittest.main()

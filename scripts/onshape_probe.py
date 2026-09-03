@@ -2,7 +2,7 @@
 
 This is the tool to run first. It authenticates with your own API keys, walks a
 document you already own, and reports which of BuildReady's five CNC dimensions
-it can fill, which it cannot, and why.
+it can infer, which variables remain unused, and why.
 
 Usage:
     uv run python scripts/onshape_probe.py documents
@@ -20,6 +20,7 @@ import base64
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -109,20 +110,6 @@ def parse_document_url(url: str) -> dict[str, str]:
 
 
 # --- Extraction ------------------------------------------------------------
-# BuildReady needs these nine measurements. Each may come from a named variable
-# (tier 1) or from a modelling feature's own parameters (tier 2).
-
-REQUIRED_DIMENSIONS = {
-    "insideRadius": "inside-pocket-corner.insideRadiusMm",
-    "cutterRadius": "inside-pocket-corner.selectedCutterRadiusMm",
-    "pocketDepth": "deep-pocket.depthMm",
-    "pocketMinWidth": "deep-pocket.minWidthMm",
-    "wallThickness": "thin-wall.thicknessMm",
-    "holeDepth": "deep-drilled-hole.depthMm",
-    "holeDiameter": "deep-drilled-hole.diameterMm",
-    "mountingHoleDiameter": "mounting-hole-tolerance.diameterMm",
-    "mountingTolerance": "mounting-hole-tolerance.tolerancePlusMinusMm",
-}
 
 # Feature types worth reporting even when they are not named variables, because
 # they carry the quantities BuildReady's rules care about.
@@ -159,7 +146,12 @@ def walk_variables(node: Any, found: list[dict[str, str]]) -> None:
             if parameter.get("parameterId") == "value" and isinstance(parameter.get("expression"), str):
                 expression = parameter["expression"]
         if name and expression:
-            found.append({"name": name, "expression": expression})
+            found.append({
+                "name": name,
+                "expression": expression,
+                "sourceFeatureId": node.get("featureId"),
+                "sourceFeatureName": node.get("name"),
+            })
 
     for value in node.values():
         if isinstance(value, (dict, list)):
@@ -176,6 +168,30 @@ def summarize_features(features: list[dict[str, Any]]) -> list[tuple[str, str, s
         relevance = INTERESTING_FEATURE_TYPES.get(feature_type, "")
         rows.append((feature_type, name, relevance))
     return rows
+
+
+def discover_variables(variables: list[dict[str, Any]]) -> dict[str, Any]:
+    """Run the exact browser inference module; the CLI has no duplicate name map."""
+    program = """
+import fs from 'node:fs'
+import { discoverManufacturingVariables } from './web/onshape-discovery.js'
+import { parseQuantityMm } from './web/onshape-adapter.js'
+const variables = JSON.parse(fs.readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify(discoverManufacturingVariables(variables, parseQuantityMm)))
+"""
+    try:
+        result = subprocess.run(
+            ["node", "--experimental-default-type=module", "--input-type=module", "-e", program],
+            cwd=ROOT,
+            input=json.dumps(variables),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", "")
+        raise ProbeError(f"Could not run semantic discovery with Node.js: {detail}") from error
+    return json.loads(result.stdout)
 
 
 def command_documents() -> int:
@@ -235,11 +251,24 @@ def command_inspect(url: str, show_raw: bool) -> int:
     features_payload = api_get(f"/api/v6/partstudios{scope}/features")
     features = features_payload.get("features", [])
 
+    if features_payload.get("microversionId"):
+        microversion_id = features_payload["microversionId"]
+    elif wvm == "w":
+        current = api_get(f"/api/v6/documents/d/{did}/w/{wvmid}/currentmicroversion")
+        microversion_id = current.get("microversion", "unknown")
+    else:
+        versions = api_get(f"/api/v6/documents/d/{did}/versions?offset=0&limit=0")
+        selected_version = next(
+            (version for version in versions if version.get("id") == wvmid),
+            {},
+        )
+        microversion_id = selected_version.get("microversion", "unknown")
+
     if show_raw:
         print(json.dumps(features_payload, indent=2)[:20000])
         return 0
 
-    print(f"\nMicroversion: {features_payload.get('microversionId', 'unknown')}")
+    print(f"\nMicroversion: {microversion_id}")
     print(f"Features: {len(features)}")
 
     rows = summarize_features(features)
@@ -257,39 +286,30 @@ def command_inspect(url: str, show_raw: bool) -> int:
     for name, expression in list(by_name.items())[:40]:
         print(f"  #{name} = {expression}")
 
-    print("\nBuildReady dimension coverage:")
-    present, missing = [], []
-    for variable, target in REQUIRED_DIMENSIONS.items():
-        if variable in by_name:
-            present.append(variable)
-            print(f"  [ok]      #{variable:<22} -> {target}")
-        else:
-            missing.append(variable)
-            print(f"  [missing] #{variable:<22} -> {target}")
-
-    print(f"\n{len(present)}/{len(REQUIRED_DIMENSIONS)} dimensions available.")
-
-    if missing:
+    discovery = discover_variables(variables)
+    print("\nBuildReady semantic inference:")
+    for mapping in discovery["mappings"]:
         print(
-            "\nTo connect this Part Studio, add the missing variables to it.\n"
-            "In Onshape: Insert > Variable, or a Variable Studio, one per value.\n"
-            "They must evaluate to a literal length, for example '1 mm' or '0.25 in'.\n"
-            "Point each at the geometry it describes so the measurements stay true.\n"
-            "\nSuggested starting values for a demonstration bracket:\n"
+            f"  [{mapping['confidence']:<6}] #{mapping['variableName']:<28} "
+            f"-> {mapping['roleId']} ({mapping['valueMm']:g} mm)"
         )
-        defaults = {
-            "insideRadius": "1 mm", "cutterRadius": "3 mm", "pocketDepth": "24 mm",
-            "pocketMinWidth": "6 mm", "wallThickness": "0.8 mm", "holeDepth": "30 mm",
-            "holeDiameter": "5 mm", "mountingHoleDiameter": "8 mm", "mountingTolerance": "0.02 mm",
-        }
-        for variable in missing:
-            print(f"    #{variable} = {defaults[variable]}")
+    print(
+        f"\n{len(discovery['mappings'])}/{discovery['roleCount']} semantic roles inferred; "
+        f"{len(discovery['unmapped'])} valid variables intentionally left unmapped."
+    )
+
+    if not discovery["mappings"]:
+        print(
+            "\nNo applicable manufacturing groups were found. Use descriptive variable names "
+            "that combine a measurement and context, such as cavity_min_span, "
+            "internal_relief_rad, or coolant_bore_depth. Literal length expressions are required."
+        )
     else:
-        print("\nThis Part Studio is ready. Add to .env:\n")
+        print("\nThis Part Studio can be connected. Add to .env:\n")
         print(f"  ONSHAPE_DOCUMENT_ID={did}")
         print(f"  ONSHAPE_WORKSPACE_ID={wvmid}")
         print(f"  ONSHAPE_ELEMENT_ID={eid}")
-        print("\nThen: uv run python scripts/serve.py")
+        print("\nThen: .venv/bin/python scripts/serve.py")
 
     return 0
 

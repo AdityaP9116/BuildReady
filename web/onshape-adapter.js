@@ -8,6 +8,8 @@
  * identical in form to controlled-fixture findings.
  */
 
+import { discoverManufacturingVariables } from './onshape-discovery.js?v=20260903-1'
+
 /** Length units accepted in an Onshape quantity expression, expressed in millimetres. */
 const UNIT_TO_MM = Object.freeze({
   mm: 1,
@@ -65,48 +67,6 @@ export function parseQuantityMm(expression) {
   return Math.round(magnitude * factor * 1000) / 1000
 }
 
-/** Reduces the payload's variable list to `{ name: millimetres }`, validating ranges. */
-export function resolveVariables(payload, variableMap) {
-  if (!payload?.ok || !Array.isArray(payload.variables)) {
-    throw new OnshapeAdapterError('ONSHAPE_BAD_PAYLOAD', 'the Onshape response did not contain variables.')
-  }
-
-  const byName = new Map()
-  for (const variable of payload.variables) {
-    if (variable && typeof variable.name === 'string' && !byName.has(variable.name)) {
-      byName.set(variable.name, variable.expression)
-    }
-  }
-
-  const resolved = {}
-  const missing = []
-
-  for (const entry of variableMap) {
-    if (!byName.has(entry.variableName)) {
-      missing.push(entry.variableName)
-      continue
-    }
-
-    const millimetres = parseQuantityMm(byName.get(entry.variableName))
-    if (millimetres < entry.minimumMm || millimetres > entry.maximumMm) {
-      throw new OnshapeAdapterError(
-        'ONSHAPE_VALUE_OUT_OF_RANGE',
-        `${entry.variableName} = ${millimetres} mm is outside the supported ${entry.minimumMm}–${entry.maximumMm} mm range.`,
-      )
-    }
-    resolved[entry.variableName] = millimetres
-  }
-
-  if (missing.length > 0) {
-    throw new OnshapeAdapterError(
-      'ONSHAPE_MISSING_VARIABLES',
-      `the Part Studio is missing required variables: ${missing.join(', ')}.`,
-    )
-  }
-
-  return resolved
-}
-
 /**
  * Builds a design fixture of the same shape the rule engine already consumes,
  * with every mapped dimension replaced by its live Onshape measurement.
@@ -115,22 +75,34 @@ export function resolveVariables(payload, variableMap) {
  * feature labels, highlight ids) that Onshape variables do not describe.
  */
 export function mapOnshapeToDesign(payload, source, baseFixture) {
-  const resolved = resolveVariables(payload, source.variableMap)
-
-  const dimensionsByFeature = new Map()
-  for (const entry of source.variableMap) {
-    const dimensions = dimensionsByFeature.get(entry.featureId) ?? {}
-    dimensions[entry.dimensionKey] = resolved[entry.variableName]
-    dimensionsByFeature.set(entry.featureId, dimensions)
+  if (!payload?.ok || !Array.isArray(payload.variables)) {
+    throw new OnshapeAdapterError('ONSHAPE_BAD_PAYLOAD', 'the Onshape response did not contain variables.')
   }
+  const discovery = discoverManufacturingVariables(payload.variables, parseQuantityMm)
+  const byRole = new Map(discovery.mappings.map((mapping) => [mapping.roleId, mapping]))
+  const featureDefinitions = [
+    ['inside-pocket-corner', { insideRadiusMm: 'cornerRadius', selectedCutterRadiusMm: 'cutterRadius' }],
+    ['deep-pocket', { depthMm: 'pocketDepth', minWidthMm: 'pocketWidth' }],
+    ['thin-wall', { thicknessMm: 'wallThickness' }],
+    ['deep-drilled-hole', { depthMm: 'deepHoleDepth', diameterMm: 'deepHoleDiameter' }],
+    ['mounting-hole-tolerance', { diameterMm: 'mountHoleDiameter', tolerancePlusMinusMm: 'mountTolerance' }],
+  ]
 
-  const unmapped = baseFixture.features
-    .filter((feature) => !dimensionsByFeature.has(feature.featureId))
-    .map((feature) => feature.featureId)
-  if (unmapped.length > 0) {
+  const features = []
+  for (const [featureId, dimensions] of featureDefinitions) {
+    const entries = Object.entries(dimensions)
+    if (!entries.every(([, roleId]) => byRole.has(roleId))) continue
+    const base = baseFixture.features.find((feature) => feature.featureId === featureId)
+    features.push({
+      ...base,
+      dimensions: Object.fromEntries(entries.map(([key, roleId]) => [key, byRole.get(roleId).valueMm])),
+      selected: features.length === 0,
+    })
+  }
+  if (features.length === 0) {
     throw new OnshapeAdapterError(
-      'ONSHAPE_INCOMPLETE_MAPPING',
-      `no Onshape variables map to: ${unmapped.join(', ')}.`,
+      'ONSHAPE_NO_APPLICABLE_MEASUREMENTS',
+      'no complete manufacturing measurement groups could be inferred from the Part Studio variables.',
     )
   }
 
@@ -139,16 +111,18 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
   const microversion = payload.microversionId ?? 'unknown'
   const revisionId = `onshape-${microversion.slice(0, 12)}`
   const provenance = `${payload.document.documentId}/${microversion}`
+  const designId = `ONSHAPE-${payload.document.documentId.slice(0, 8).toUpperCase()}`
 
   return {
     design: {
       ...baseFixture,
-      designId: baseFixture.designId,
+      designId,
+      name: payload.document.name,
       revisionId,
       fixtureVersion: `onshape-${payload.serializationVersion ?? '1.0.0'}`,
-      features: baseFixture.features.map((feature) => ({
+      features: features.map((feature) => ({
         ...feature,
-        dimensions: dimensionsByFeature.get(feature.featureId),
+        objectReference: `onshape://${payload.document.documentId}/${payload.document.elementId}/${feature.featureId}`,
         revisionProvenance: provenance,
         evidenceReference: `onshape://documents/${payload.document.documentId}/microversions/${microversion}/elements/${payload.document.elementId}/features/${feature.featureId}`,
       })),
@@ -162,8 +136,12 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
       documentHref: payload.document.href,
       microversionId: microversion,
       retrievedAt: payload.retrievedAt,
-      measurementCount: Object.keys(resolved).length,
+      measurementCount: discovery.inventory.length,
+      inferredMeasurementCount: discovery.mappings.length,
+      applicableRuleCount: features.length,
+      featureSummary: payload.featureSummary ?? [],
+      discovery,
     },
-    measurements: resolved,
+    measurements: Object.fromEntries(discovery.mappings.map((mapping) => [mapping.roleId, mapping.valueMm])),
   }
 }

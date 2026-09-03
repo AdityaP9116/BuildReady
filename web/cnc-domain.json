@@ -83,18 +83,18 @@
     {
       "ruleId": "CNC-R001",
       "version": "1.0.0",
-      "title": "Internal corner radius is below the demonstrated tool clearance",
+      "title": "Inside corner may be too small for the selected cutter",
       "severity": "high",
       "featureId": "inside-pocket-corner",
       "calculation": { "kind": "minimum", "measurementKey": "insideRadiusMm", "threshold": 3.5, "unit": "mm" },
       "consequence": "The selected 3.0 mm cutter cannot produce the 1.0 mm internal radius without a tool or geometry change.",
-      "recommendation": "Increase the inside corner radius to 3.5 mm for this controlled fixture.",
+      "recommendation": "Increase the inside corner radius to at least 3.5 mm, or select a smaller cutter.",
       "evidenceReferences": ["fixture://BRKT-001/B/features/inside-pocket-corner", "ruleset://cnc-demo-1.0.0/CNC-R001"]
     },
     {
       "ruleId": "CNC-R002",
       "version": "1.0.0",
-      "title": "Pocket depth-to-width ratio exceeds the demonstration threshold",
+      "title": "Pocket may be too deep for its width",
       "severity": "medium",
       "featureId": "deep-pocket",
       "calculation": { "kind": "maximum_ratio", "numeratorKey": "depthMm", "denominatorKey": "minWidthMm", "threshold": 3.0, "unit": "ratio" },
@@ -105,7 +105,7 @@
     {
       "ruleId": "CNC-R003",
       "version": "1.0.0",
-      "title": "Wall thickness is below the aluminum demonstration threshold",
+      "title": "Wall may be too thin for stable machining",
       "severity": "high",
       "featureId": "thin-wall",
       "calculation": { "kind": "minimum", "measurementKey": "thicknessMm", "threshold": 1.5, "unit": "mm" },
@@ -116,7 +116,7 @@
     {
       "ruleId": "CNC-R004",
       "version": "1.0.0",
-      "title": "Drilled-hole depth-to-diameter ratio exceeds the demonstration threshold",
+      "title": "Hole may be too deep for its diameter",
       "severity": "medium",
       "featureId": "deep-drilled-hole",
       "calculation": { "kind": "maximum_ratio", "numeratorKey": "depthMm", "denominatorKey": "diameterMm", "threshold": 4.0, "unit": "ratio" },
@@ -127,7 +127,7 @@
     {
       "ruleId": "CNC-R005",
       "version": "1.0.0",
-      "title": "Mounting-hole tolerance is tighter than the default demonstration capability",
+      "title": "Mounting-hole tolerance may be difficult to hold",
       "severity": "medium",
       "featureId": "mounting-hole-tolerance",
       "calculation": { "kind": "minimum", "measurementKey": "tolerancePlusMinusMm", "threshold": 0.05, "unit": "mm" },

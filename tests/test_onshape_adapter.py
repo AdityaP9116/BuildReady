@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import subprocess
 import unittest
 from pathlib import Path
 from typing import Any
@@ -83,41 +84,6 @@ def load_source() -> dict[str, Any]:
     return json.loads(SOURCE_PATH.read_text(encoding="utf-8"))
 
 
-def resolve_variables(variables: list[dict[str, str]], variable_map: list[dict[str, Any]]) -> dict[str, float]:
-    by_name: dict[str, str] = {}
-    for variable in variables:
-        by_name.setdefault(variable["name"], variable["expression"])
-
-    resolved: dict[str, float] = {}
-    missing: list[str] = []
-    for entry in variable_map:
-        if entry["variableName"] not in by_name:
-            missing.append(entry["variableName"])
-            continue
-        millimetres = parse_quantity_mm(by_name[entry["variableName"]])
-        if not entry["minimumMm"] <= millimetres <= entry["maximumMm"]:
-            raise OnshapeAdapterError("ONSHAPE_VALUE_OUT_OF_RANGE")
-        resolved[entry["variableName"]] = millimetres
-    if missing:
-        raise OnshapeAdapterError("ONSHAPE_MISSING_VARIABLES")
-    return resolved
-
-
-def map_onshape_to_design(resolved: dict[str, float], source: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
-    dimensions_by_feature: dict[str, dict[str, float]] = {}
-    for entry in source["variableMap"]:
-        dimensions_by_feature.setdefault(entry["featureId"], {})[entry["dimensionKey"]] = resolved[
-            entry["variableName"]
-        ]
-
-    design = copy.deepcopy(base)
-    for feature in design["features"]:
-        if feature["featureId"] not in dimensions_by_feature:
-            raise OnshapeAdapterError("ONSHAPE_INCOMPLETE_MAPPING")
-        feature["dimensions"] = dimensions_by_feature[feature["featureId"]]
-    return design
-
-
 class QuantityParsingTests(unittest.TestCase):
     def test_supported_length_units_convert_to_millimetres(self) -> None:
         self.assertEqual(parse_quantity_mm("1 mm"), 1.0)
@@ -132,26 +98,55 @@ class QuantityParsingTests(unittest.TestCase):
                     parse_quantity_mm(expression)
 
 
-class VariableMapContractTests(unittest.TestCase):
+def map_with_shipped_javascript(variables: list[dict[str, str]]) -> dict[str, Any]:
+    """Exercise the browser's real discovery and adapter modules in Node."""
+    program = r"""
+import fs from 'node:fs'
+import { mapOnshapeToDesign } from './web/onshape-adapter.js'
+const variables = JSON.parse(fs.readFileSync(0, 'utf8'))
+const source = JSON.parse(fs.readFileSync('./web/onshape-source.json', 'utf8'))
+const domain = JSON.parse(fs.readFileSync('./web/cnc-domain.json', 'utf8'))
+const payload = {
+  ok: true,
+  variables,
+  document: {
+    documentId: '123456789012345678901234',
+    workspaceId: '234567890123456789012345',
+    elementId: '345678901234567890123456',
+    name: 'Semantic discovery test',
+    href: 'https://cad.onshape.com/documents/123456789012345678901234',
+  },
+  microversionId: '456789012345678901234567',
+  retrievedAt: '2026-09-02T00:00:00Z',
+}
+process.stdout.write(JSON.stringify(mapOnshapeToDesign(payload, source, domain.design)))
+"""
+    # Embed the payload as a JSON literal so stdin remains the module source.
+    embedded = program.replace(
+        "JSON.parse(fs.readFileSync(0, 'utf8'))",
+        json.dumps(variables),
+    )
+    result = subprocess.run(
+        ["node", "--experimental-default-type=module", "--input-type=module"],
+        cwd=ROOT,
+        input=embedded,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return json.loads(result.stdout)
+
+
+class SemanticDiscoveryContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = load_source()
         cls.domain = load_domain()
 
-    def test_variable_map_covers_every_fixture_dimension_exactly(self) -> None:
-        mapped = {
-            (entry["featureId"], entry["dimensionKey"]) for entry in self.source["variableMap"]
-        }
-        expected = {
-            (feature["featureId"], key)
-            for feature in self.domain["design"]["features"]
-            for key in feature["dimensions"]
-        }
-        self.assertEqual(expected, mapped)
-
-    def test_variable_names_are_unique(self) -> None:
-        names = [entry["variableName"] for entry in self.source["variableMap"]]
-        self.assertEqual(len(names), len(set(names)))
+    def test_source_uses_inference_instead_of_an_exact_name_map(self) -> None:
+        self.assertNotIn("variableMap", self.source)
+        self.assertEqual(self.source["discovery"]["strategy"], "semantic-token-scoring")
+        self.assertTrue(self.source["discovery"]["partialCoverage"])
 
     def test_write_back_policy_never_targets_the_source_workspace(self) -> None:
         policy = self.source["writeBackPolicy"]
@@ -160,12 +155,51 @@ class VariableMapContractTests(unittest.TestCase):
         self.assertIn("main-workspace", policy["forbiddenTargets"])
         self.assertIn("released-version", policy["forbiddenTargets"])
 
-    def test_write_back_variable_matches_the_proposal_policy_feature(self) -> None:
-        write_back = self.source["writeBackPolicy"]["variableName"]
-        entry = next(
-            item for item in self.source["variableMap"] if item["variableName"] == write_back
+    def test_write_back_policy_targets_an_inferred_semantic_role(self) -> None:
+        self.assertEqual(self.source["writeBackPolicy"]["semanticRole"], "cornerRadius")
+
+    def test_unfamiliar_names_are_inferred_and_distractors_are_not_forced(self) -> None:
+        values = {
+            "cavity_z_depth": "26 mm",
+            "cavity_min_span": "14 mm",
+            "internal_relief_rad": "1.2 mm",
+            "endmill_tool_rad": "3 mm",
+            "rib_web_gauge": "0.9 mm",
+            "coolant_bore_depth": "34 mm",
+            "coolant_bore_dia": "5 mm",
+            "fixture_bolt_bore_dia": "8 mm",
+            "fixture_bolt_fit_tol": "0.018 mm",
+            "stock_length": "140 mm",
+            "boss_outer_dia": "20 mm",
+            "sensor_port_dia": "6 mm",
+        }
+        mapped = map_with_shipped_javascript([
+            {
+                "name": name,
+                "expression": expression,
+                "sourceFeatureName": f"Manufacturing variable · {name}",
+            }
+            for name, expression in values.items()
+        ])
+        discovery = mapped["provenance"]["discovery"]
+        roles = {item["roleId"]: item["variableName"] for item in discovery["mappings"]}
+        self.assertEqual(len(roles), 9)
+        self.assertEqual(roles["cornerRadius"], "internal_relief_rad")
+        self.assertEqual(roles["mountTolerance"], "fixture_bolt_fit_tol")
+        self.assertEqual(mapped["provenance"]["applicableRuleCount"], 5)
+        self.assertIn("stock_length", {item["name"] for item in discovery["unmapped"]})
+
+    def test_partial_coverage_builds_only_complete_rule_groups(self) -> None:
+        mapped = map_with_shipped_javascript([
+            {"name": "internal_relief_rad", "expression": "1.2 mm"},
+            {"name": "endmill_tool_rad", "expression": "3 mm"},
+            {"name": "cavity_z_depth", "expression": "26 mm"},
+        ])
+        self.assertEqual(
+            [feature["featureId"] for feature in mapped["design"]["features"]],
+            ["inside-pocket-corner"],
         )
-        self.assertEqual(entry["featureId"], self.domain["proposalPolicy"]["featureId"])
+        self.assertEqual(mapped["provenance"]["applicableRuleCount"], 1)
 
 
 class ProxyBoundaryTests(unittest.TestCase):
@@ -173,10 +207,13 @@ class ProxyBoundaryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.function_source = FUNCTION_PATH.read_text(encoding="utf-8")
 
-    def test_proxy_never_reads_caller_supplied_routing_input(self) -> None:
-        """Document/workspace/element ids must come from env bindings only."""
-        for forbidden in ("params.", "searchParams", "request.url"):
-            self.assertNotIn(forbidden, self.function_source)
+    def test_extension_context_is_validated_and_document_allowlisted(self) -> None:
+        """Context may select an explicitly allowed document, never arbitrary API-key scope."""
+        self.assertIn("ID_PATTERN.test(id)", self.function_source)
+        self.assertIn("['w', 'v'].includes(context.workspaceOrVersion)", self.function_source)
+        self.assertIn("ONSHAPE_ALLOWED_DOCUMENT_IDS", self.function_source)
+        self.assertIn("ONSHAPE_CONTEXT_FORBIDDEN", self.function_source)
+        self.assertIn("allowedDocuments.has(context.documentId)", self.function_source)
 
     def test_proxy_only_exposes_a_get_handler(self) -> None:
         self.assertIn("export async function onRequestGet", self.function_source)
@@ -197,12 +234,11 @@ class LiveSourceReachesTheSameFindingsTests(unittest.TestCase):
 
     def mapped_design(self) -> dict[str, Any]:
         variables = collect_variables(self.payload["features"])
-        resolved = resolve_variables(variables, self.source["variableMap"])
-        return map_onshape_to_design(resolved, self.source, self.domain["design"])
+        return map_with_shipped_javascript(variables)["design"]
 
     def test_extraction_ignores_non_variable_features(self) -> None:
         variables = collect_variables(self.payload["features"])
-        self.assertEqual(len(variables), len(self.source["variableMap"]))
+        self.assertEqual(len(variables), 9)
         self.assertNotIn("extrude", {variable["name"] for variable in variables})
 
     def test_mapped_design_matches_the_controlled_fixture_dimensions(self) -> None:
@@ -227,7 +263,10 @@ class LiveSourceReachesTheSameFindingsTests(unittest.TestCase):
         ]
 
         self.assertEqual(5, len(live_findings))
-        self.assertEqual(fixture_findings, live_findings)
+        for fixture_finding, live_finding in zip(fixture_findings, live_findings):
+            fixture_finding = {key: value for key, value in fixture_finding.items() if key != "findingId"}
+            live_finding = {key: value for key, value in live_finding.items() if key != "findingId"}
+            self.assertEqual(fixture_finding, live_finding)
 
     def test_a_corrected_radius_in_onshape_clears_the_corner_finding(self) -> None:
         """Proves the rule engine reacts to real model state, not a canned answer."""

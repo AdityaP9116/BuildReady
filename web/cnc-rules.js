@@ -1,4 +1,4 @@
-import { CNC_RULES, RULE_SET_VERSION } from './domain.js'
+import { CNC_RULES, RULE_SET_VERSION } from './domain.js?v=20260903-1'
 
 export class RuleInputError extends Error {
   constructor(code, message, ruleId = null) {
@@ -132,10 +132,21 @@ export function evaluateCncManufacturability(fixture, { severity = 'all' } = {})
   }
   requireMillimeters(fixture)
 
+  const evaluatedRuleIds = []
+  const skippedRules = []
   const findings = RULE_EVALUATORS
     .map(({ ruleId, evaluate }) => {
       const rule = ruleById(ruleId)
       const feature = fixture.features.find((candidate) => candidate.featureId === rule.featureId)
+      if (!feature) {
+        skippedRules.push(Object.freeze({
+          ruleId,
+          featureId: rule.featureId,
+          reason: 'required measurements were not confidently inferred',
+        }))
+        return null
+      }
+      evaluatedRuleIds.push(ruleId)
       return evaluate(feature, fixture)
     })
     .filter(Boolean)
@@ -146,6 +157,12 @@ export function evaluateCncManufacturability(fixture, { severity = 'all' } = {})
     revisionPrecondition: `${fixture.designId}/${fixture.revisionId}@${fixture.fixtureVersion}`,
     ruleSetVersion: RULE_SET_VERSION,
     requestedSeverity: severity,
+    coverage: Object.freeze({
+      availableRules: RULE_EVALUATORS.length,
+      evaluatedRuleIds: Object.freeze(evaluatedRuleIds),
+      evaluatedRuleCount: evaluatedRuleIds.length,
+      skippedRules: Object.freeze(skippedRules),
+    }),
     counts: Object.freeze({
       total: findings.length,
       high: findings.filter((finding) => finding.severity === 'high').length,
@@ -163,6 +180,7 @@ export function compactInspectionResult(inspection, generatedAt) {
     ruleSetVersion: inspection.ruleSetVersion,
     generatedAt,
     counts: inspection.counts,
+    coverage: inspection.coverage,
     findings: inspection.findings.map((finding) => ({
       findingId: finding.findingId,
       severity: finding.severity,

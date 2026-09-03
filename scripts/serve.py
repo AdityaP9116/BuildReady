@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 try:
     from scripts.fea_service import FeaService, FeaServiceError, error_payload
@@ -25,8 +25,9 @@ except ModuleNotFoundError:  # Direct `python scripts/serve.py` execution.
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "web"
+BASE_CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
 SECURITY_HEADERS = {
-    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "Content-Security-Policy": f"{BASE_CONTENT_SECURITY_POLICY}; frame-ancestors 'none'",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), tools=(self)",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
@@ -74,6 +75,19 @@ def local_fea_service() -> FeaService:
         if _fea_service is None:
             _fea_service = FeaService.from_environment()
         return _fea_service
+
+
+def load_dotenv() -> None:
+    """Load the repo-local development environment without logging secrets."""
+    env_file = ROOT / ".env"
+    if not env_file.exists():
+        return
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
 class FatalOnshapeError(RuntimeError):
@@ -176,7 +190,48 @@ def onshape_get(path: str) -> dict[str, Any]:
     ) from last_error
 
 
-def local_onshape_payload() -> tuple[int, dict[str, Any]]:
+def resolve_onshape_context(query: dict[str, list[str]] | None = None) -> tuple[int, dict[str, Any]]:
+    query = query or {}
+    supplied = any(name in query for name in (
+        "documentId", "workspaceOrVersion", "workspaceOrVersionId", "elementId"
+    ))
+    if not supplied:
+        return 200, {
+            "documentId": os.environ["ONSHAPE_DOCUMENT_ID"],
+            "workspaceOrVersion": "w",
+            "workspaceOrVersionId": os.environ["ONSHAPE_WORKSPACE_ID"],
+            "elementId": os.environ["ONSHAPE_ELEMENT_ID"],
+        }
+
+    context = {
+        "documentId": (query.get("documentId") or [""])[0],
+        "workspaceOrVersion": (query.get("workspaceOrVersion") or [""])[0],
+        "workspaceOrVersionId": (query.get("workspaceOrVersionId") or [""])[0],
+        "elementId": (query.get("elementId") or [""])[0],
+    }
+    ids = (context["documentId"], context["workspaceOrVersionId"], context["elementId"])
+    if not all(ID_PATTERN.fullmatch(identifier) for identifier in ids) \
+            or context["workspaceOrVersion"] not in {"w", "v"}:
+        return 400, {
+            "code": "ONSHAPE_BAD_CONTEXT",
+            "message": "The Onshape extension context is malformed.",
+        }
+
+    allowed = {os.environ["ONSHAPE_DOCUMENT_ID"]}
+    allowed.update(
+        item.strip()
+        for item in os.environ.get("ONSHAPE_ALLOWED_DOCUMENT_IDS", "").split(",")
+        if item.strip()
+    )
+    if context["documentId"] not in allowed:
+        return 403, {
+            "code": "ONSHAPE_CONTEXT_FORBIDDEN",
+            "message": "This Onshape document is not allowed for this deployment.",
+        }
+    return 200, context
+
+
+def local_onshape_payload(query: dict[str, list[str]] | None = None) -> tuple[int, dict[str, Any]]:
     """Local counterpart to `functions/api/onshape/design.js`.
 
     Kept deliberately small and behaviourally identical at the response contract
@@ -187,15 +242,29 @@ def local_onshape_payload() -> tuple[int, dict[str, Any]]:
             "ONSHAPE_NOT_CONFIGURED", "The live Onshape source is not configured.", 503
         )
 
-    document_id = os.environ["ONSHAPE_DOCUMENT_ID"]
-    workspace_id = os.environ["ONSHAPE_WORKSPACE_ID"]
-    element_id = os.environ["ONSHAPE_ELEMENT_ID"]
+    context_status, context = resolve_onshape_context(query)
+    if context_status != 200:
+        return context_status, {
+            "ok": False,
+            "error": {
+                "code": context["code"],
+                "message": context["message"],
+                "retryable": False,
+            },
+        }
+
+    document_id = context["documentId"]
+    workspace_or_version = context["workspaceOrVersion"]
+    workspace_or_version_id = context["workspaceOrVersionId"]
+    element_id = context["elementId"]
     base_url = os.environ.get("ONSHAPE_BASE_URL", "https://cad.onshape.com")
-    if not all(ID_PATTERN.fullmatch(value) for value in (document_id, workspace_id, element_id)):
+    if not all(ID_PATTERN.fullmatch(value) for value in (document_id, workspace_or_version_id, element_id)):
         return failure(
             "ONSHAPE_NOT_CONFIGURED", "The configured Onshape identifiers are malformed.", 503
         )
-    cache_key = "|".join((base_url, document_id, workspace_id, element_id))
+    cache_key = "|".join(
+        (base_url, document_id, workspace_or_version, workspace_or_version_id, element_id)
+    )
 
     with _cache_lock:
         cached = _cache.get(cache_key)
@@ -217,12 +286,20 @@ def local_onshape_payload() -> tuple[int, dict[str, Any]]:
                 return 200, {**cached["payload"], "cached": True}
 
     try:
-        scope = f"/d/{document_id}/w/{workspace_id}/e/{element_id}"
+        scope = f"/d/{document_id}/{workspace_or_version}/{workspace_or_version_id}/e/{element_id}"
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             features_future = pool.submit(onshape_get, f"/api/v6/partstudios{scope}/features")
             metadata_future = pool.submit(onshape_get, f"/api/v6/documents/{document_id}")
             features = features_future.result()
             metadata = metadata_future.result()
+        microversion_payload: dict[str, Any] | list[Any] | None = None
+        if not features.get("microversionId"):
+            microversion_path = (
+                f"/api/v6/documents/d/{document_id}/w/{workspace_or_version_id}/currentmicroversion"
+                if workspace_or_version == "w"
+                else f"/api/v6/documents/d/{document_id}/versions?offset=0&limit=0"
+            )
+            microversion_payload = onshape_get(microversion_path)
     except FatalOnshapeError as error:
         release_inflight(cache_key)
         return failure(error.code, error.message, error.status, error.retryable)
@@ -243,20 +320,56 @@ def local_onshape_payload() -> tuple[int, dict[str, Any]]:
             502,
         )
 
+    if workspace_or_version == "w":
+        microversion_id = features.get("microversionId") or (
+            microversion_payload.get("microversion") if isinstance(microversion_payload, dict) else None
+        )
+    else:
+        selected_version = next(
+            (
+                version for version in microversion_payload
+                if isinstance(version, dict) and version.get("id") == workspace_or_version_id
+            ),
+            {},
+        ) if isinstance(microversion_payload, list) else {}
+        microversion_id = features.get("microversionId") or selected_version.get("microversion")
+    if not isinstance(microversion_id, str) or not ID_PATTERN.fullmatch(microversion_id):
+        return 502, {
+            "ok": False,
+            "error": {
+                "code": "ONSHAPE_NO_MICROVERSION",
+                "message": "Onshape did not identify the current model revision.",
+                "retryable": False,
+            },
+        }
+
     payload = {
         "ok": True,
         "source": "onshape-live",
         "document": {
             "documentId": document_id,
-            "workspaceId": workspace_id,
+            "workspaceId": workspace_or_version_id if workspace_or_version == "w" else None,
+            "versionId": workspace_or_version_id if workspace_or_version == "v" else None,
+            "workspaceOrVersion": workspace_or_version,
+            "workspaceOrVersionId": workspace_or_version_id,
             "elementId": element_id,
             "name": str(metadata.get("name", "Onshape document"))[:120],
             "modifiedAt": metadata.get("modifiedAt"),
-            "href": f"{base_url}/documents/{document_id}/w/{workspace_id}/e/{element_id}",
+            "href": f"{base_url}/documents/{document_id}/{workspace_or_version}/{workspace_or_version_id}/e/{element_id}",
         },
-        "microversionId": features.get("microversionId"),
+        "microversionId": microversion_id,
         "serializationVersion": features.get("serializationVersion"),
         "variables": variables,
+        "featureSummary": [
+            {
+                "featureId": str(feature.get("featureId", ""))[:64] or None,
+                "featureType": str(feature.get("featureType", "unknown"))[:48],
+                "name": str(feature.get("name", "Unnamed feature"))[:80],
+                "suppressed": bool(feature.get("suppressed", False)),
+            }
+            for feature in features.get("features", [])[:100]
+            if isinstance(feature, dict)
+        ],
         "retrievedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 
@@ -269,7 +382,7 @@ def local_onshape_payload() -> tuple[int, dict[str, Any]]:
     return 200, payload
 
 
-def collect_variables(node: Any, found: list[dict[str, str]], depth: int = 0) -> None:
+def collect_variables(node: Any, found: list[dict[str, Any]], depth: int = 0) -> None:
     if depth > MAX_DEPTH or len(found) >= MAX_VARIABLES or node is None:
         return
     if isinstance(node, list):
@@ -291,7 +404,12 @@ def collect_variables(node: Any, found: list[dict[str, str]], depth: int = 0) ->
             if parameter.get("parameterId") == "value" and isinstance(parameter.get("expression"), str):
                 expression = parameter["expression"]
         if name and expression and len(name) <= MAX_NAME_LENGTH:
-            found.append({"name": name, "expression": expression[:MAX_NAME_LENGTH]})
+            found.append({
+                "name": name,
+                "expression": expression[:MAX_NAME_LENGTH],
+                "sourceFeatureId": str(node.get("featureId", ""))[:MAX_NAME_LENGTH] or None,
+                "sourceFeatureName": str(node.get("name", ""))[:MAX_NAME_LENGTH] or None,
+            })
 
     for value in node.values():
         if isinstance(value, (dict, list)):
@@ -304,9 +422,11 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         request_path = urlsplit(self.path).path
+        self.is_onshape_panel = request_path == "/onshape-panel"
+        self.is_api_request = request_path == ONSHAPE_ENDPOINT
 
         if request_path == ONSHAPE_ENDPOINT:
-            status, payload = local_onshape_payload()
+            status, payload = local_onshape_payload(parse_qs(urlsplit(self.path).query))
             body = json.dumps(payload).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -412,12 +532,21 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def end_headers(self) -> None:
-        for name, value in SECURITY_HEADERS.items():
+        headers = dict(SECURITY_HEADERS)
+        if getattr(self, "is_onshape_panel", False):
+            headers["Content-Security-Policy"] = (
+                f"{BASE_CONTENT_SECURITY_POLICY}; "
+                "frame-ancestors https://cad.onshape.com https://*.onshape.com"
+            )
+        for name, value in headers.items():
             self.send_header(name, value)
+        if not getattr(self, "is_api_request", False):
+            self.send_header("Cache-Control", "no-cache, max-age=0, must-revalidate")
         super().end_headers()
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Serve BuildReady locally.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=4173, type=int)

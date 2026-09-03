@@ -2,6 +2,13 @@
 
 BuildReady is a WebMCP-powered manufacturing-readiness workspace for a controlled CNC bracket demonstration. It is designed to show how an engineer and an agent can inspect deterministic manufacturing evidence, preview a bounded correction, compare supplier options, and produce a traceable review package while the engineer retains final authority.
 
+The product also includes **Model Insight**, a grounded conversational assistant
+inside both `/design` and the Onshape right panel. It answers questions about the
+active Part Studio, runs safe audited inspections when needed, explains specific
+features with evidence, exposes variable-inference confidence, and prepares
+bounded workflow steps without gaining approval or CAD-write authority. See
+[`docs/model-insight.md`](docs/model-insight.md).
+
 ## Project status
 
 Gate 10 completes the local submission-readiness package. The feature-frozen application now has an official-form-aligned Devpost draft, sub-three-minute demo script, testing record, challenge-work history, attribution disclosure, and final external-action checklist. The public deployment, YouTube upload, participant-specific form answers, and final Devpost action remain deliberately unclaimed until verified.
@@ -32,7 +39,7 @@ cnc-domain.json + supplier-fixtures.json
                   │
      route/state-scoped WebMCP tools
                   │
- canvas evidence · decisions · quotes · exports
+ Model Insight · canvas evidence · decisions · quotes · exports
 ```
 
 | Layer | Responsibility |
@@ -42,6 +49,7 @@ cnc-domain.json + supplier-fixtures.json
 | Workflow state | Enforce revision preconditions, record human/tool audit actors, and clear all derived records on reset. |
 | WebMCP surface | Register strict tools only on the route and at the state where they are valid; abort obsolete registrations. |
 | Visible application | Keep the canvas, measurement evidence, proposal, supplier cards, progress, and package synchronized. |
+| Model Insight | Route bounded natural-language questions onto the same audited handlers and compose answers only from active revision evidence. |
 | uv/Python tooling | Serve SPA fallbacks with security headers, validate sources, run tests, and build `dist/` without packages. |
 
 ## Local development
@@ -147,25 +155,40 @@ BuildReady can measure a real Onshape Part Studio instead of the controlled
 fixture. This is additive: the fixture stays the default, and a deployment
 without Onshape credentials behaves exactly as before.
 
+BuildReady also includes an **Onshape Element right panel** at
+`/onshape-panel`. In that mode the native Onshape model remains visible while
+the embedded BuildReady panel automatically reads the active, explicitly
+allowlisted Part Studio and presents a focused check → findings → questions
+workflow. Optional review/export actions remain collapsed. Client messages validate the exact Onshape parent origin;
+the server independently validates and authorizes every context. See
+[`docs/onshape-extension.md`](docs/onshape-extension.md) for registration,
+deployment, security boundaries, acceptance tests, and the OAuth roadmap.
+
 **Why a proxy exists.** The Onshape REST API does not serve browser origins, and
 [API keys](https://onshape-public.github.io/docs/auth/apikeys/) are Basic auth
 credentials that must never reach a client. `functions/api/onshape/design.js` is
 a Cloudflare Pages Function holding those credentials. It is not a pass-through:
 no caller-supplied path, document, or query reaches Onshape. It resolves exactly
-one configured Part Studio, reads its feature list, extracts the named variables
-BuildReady understands, and returns a small sanitized payload. `scripts/serve.py`
+one configured Part Studio, reads its feature list, inventories its named length
+variables and feature provenance, and returns a small sanitized payload. `scripts/serve.py`
 mirrors the same endpoint locally so `uv` remains the only toolchain.
 
 **Onshape supplies parameters, not pixels.** The Part Studio drives its geometry
-from named variables (`insideRadius`, `pocketDepth`, `wallThickness`, and so on).
-`web/onshape-adapter.js` maps those variables onto the design contract the rule
-engine already consumes, so `cnc-rules.js` is completely untouched: live CAD
-measurements flow through the same five deterministic rules and produce findings
-identical in form to fixture findings. `tests/test_onshape_adapter.py` asserts
-exactly that, and asserts that correcting the radius in Onshape clears the corner
-finding — proving the engine reacts to real model state rather than a canned
-answer. Only literal length expressions are accepted; arithmetic and
-variable references are rejected rather than guessed at.
+from named variables, but BuildReady does not require fixed names.
+`web/onshape-discovery.js` tokenizes each name and its feature provenance, scores
+manufacturing concepts, resolves collisions globally, and accepts only medium-
+or high-confidence assignments. The adapter forms only complete measurement
+groups; applicable rules run while unsupported rules are visibly reported as
+skipped. Unknown and ambiguous variables remain in provenance instead of being
+silently forced into inputs. Only literal length expressions are accepted;
+arithmetic and variable references are rejected rather than guessed at.
+
+This is not arbitrary whole-geometry analysis. The current private build supports
+allowlisted, variable-driven Part Studios; it does not yet analyze assemblies,
+drawings, or Part Studios without recognizable named dimensions. Public,
+all-document support requires per-user Onshape OAuth and a geometry/FeatureScript
+measurement layer. See the exact
+[compatibility boundary](docs/onshape-extension.md#document-compatibility).
 
 The visible canvas is a schematic evidence scene, not an imported Onshape BREP.
 Its supported pocket, corner, wall, and hole indicators are rebuilt from the
@@ -211,6 +234,9 @@ uv run python scripts/mock_onshape.py           # add --fail <mode> to test degr
 uv run python scripts/onshape_probe.py documents
 uv run python scripts/onshape_probe.py inspect <onshape-url>
 uv run --env-file .env python scripts/serve.py
+
+# Optional: create the complex adaptive-inference demonstration part
+uv run python scripts/create_onshape_demo.py --apply
 ```
 
 Configure with the variables in `.env.example` (Cloudflare secrets in production).

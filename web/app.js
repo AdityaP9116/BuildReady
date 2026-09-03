@@ -10,16 +10,23 @@ import {
   setOnshapeAvailability,
   workflowState,
   setActiveRoute,
-} from './state.js'
-import { onshapeSourceAvailable } from './onshape-client.js'
-import { mountBracketViewer } from './bracket-viewer.js'
+} from './state.js?v=20260903-1'
+import {
+  configureOnshapeExtensionContext,
+  onshapeSourceAvailable,
+} from './onshape-client.js?v=20260903-1'
+import {
+  connectOnshapeExtension,
+  parseOnshapeExtensionContext,
+} from './onshape-extension.js?v=20260903-1'
+import { mountBracketViewer } from './bracket-viewer.js?v=20260903-1'
 import {
   executeGate7Tool,
   synchronizeWebMcpTools,
   webMcpAvailable,
-} from './webmcp.js'
-import { serializeReviewPackageMarkdown } from './review-package.js'
-import { toolErrorEnvelope } from './error-contract.js'
+} from './webmcp.js?v=20260903-1'
+import { serializeReviewPackageMarkdown } from './review-package.js?v=20260903-1'
+import { toolErrorEnvelope } from './error-contract.js?v=20260903-1'
 import {
   approveAndSubmitHuman,
   feaState,
@@ -28,7 +35,8 @@ import {
   readSimulationResults,
   readSimulationStatus,
   resetFeaState,
-} from './fea-state.js'
+} from './fea-state.js?v=20260903-1'
+import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-1'
 
 const routes = {
   '/': renderDesign,
@@ -37,6 +45,7 @@ const routes = {
   '/suppliers': renderSuppliers,
   '/review': renderReview,
   '/about': renderAbout,
+  '/onshape-panel': renderOnshapePanel,
 }
 
 const app = document.querySelector('#app')
@@ -47,6 +56,10 @@ const globalResetButton = document.querySelector('#global-reset-button')
 let bracketViewer = null
 let findingsSignature = ''
 let viewerSnapshotKey = ''
+let onshapeBridge = null
+let onshapeExtensionContext = null
+let onshapeExtensionStatus = { phase: 'idle', message: 'Waiting for Onshape context.' }
+const modelInsight = createModelInsightAssistant()
 
 function pageIntro(eyebrow, title, description, aside = '') {
   return `
@@ -122,6 +135,44 @@ function renderAgentConsole() {
   `
 }
 
+function renderModelInsightAssistant(mode = 'standalone') {
+  const embedded = mode === 'embedded'
+  return `
+    <section class="insight-assistant" data-mode="${mode}" aria-labelledby="insight-title">
+      <header class="insight-header">
+        <div>
+          ${embedded ? '' : '<p class="eyebrow">Design assistant</p>'}
+          <h2 id="insight-title">${embedded ? 'Ask BuildReady' : 'Model Insight'}</h2>
+          <p>Ask about the active model, a finding, or what to change next.</p>
+        </div>
+        <span class="insight-grounding"><i aria-hidden="true"></i><span id="insight-grounding-label">Current model</span></span>
+      </header>
+      <div class="insight-transcript" id="insight-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
+      <div class="insight-suggestions" id="insight-suggestions" aria-label="Suggested questions"></div>
+      <form class="insight-composer" id="insight-form">
+        <label for="insight-input">Your question</label>
+        <textarea id="insight-input" name="question" rows="2" maxlength="500" placeholder="Why is the first issue important?" autocomplete="off"></textarea>
+        <div class="insight-composer-footer">
+          <small><kbd>Enter</kbd> send · <kbd>Shift</kbd> + <kbd>Enter</kbd> new line</small>
+          <div>
+            <button type="button" class="quiet-button compact-button" id="insight-stop" hidden>Stop</button>
+            <button type="submit" class="compact-button" id="insight-send">Ask</button>
+          </div>
+        </div>
+      </form>
+      <footer class="insight-footer">
+        <span>Read-only guidance</span>
+        <div>
+          <button type="button" class="quiet-button" id="insight-copy">Copy</button>
+          <button type="button" class="quiet-button" id="insight-export-md">Export Markdown</button>
+          <button type="button" class="quiet-button" id="insight-export-json">Export JSON</button>
+          <button type="button" class="quiet-button" id="insight-clear">Clear chat</button>
+        </div>
+      </footer>
+    </section>
+  `
+}
+
 function renderDesign() {
   return `
     <div class="page">
@@ -152,6 +203,7 @@ function renderDesign() {
           <h2 id="source-title">Controlled fixture</h2>
           <p id="source-detail">BRKT-001 revision B ships with the app so the workflow runs with no account or setup.</p>
           <p id="source-provenance" class="source-provenance" hidden></p>
+          <details id="source-discovery" class="source-discovery" hidden><summary>Variable discovery</summary><div id="source-discovery-content"></div></details>
         </div>
         <div class="source-actions">
           <button type="button" id="load-onshape-source" hidden>Load live Onshape model</button>
@@ -218,6 +270,7 @@ function renderDesign() {
         </div>
         <p class="authority-note">These are human-only controls. No WebMCP tool can approve, reject, or commit geometry.</p>
       </section>
+      ${renderModelInsightAssistant('standalone')}
       ${renderAgentConsole()}
     </div>
   `
@@ -302,6 +355,79 @@ function renderSimulation() {
         </div>
         <output class="tool-output" id="fea-tool-output" aria-live="polite">No FEA tool output yet.</output>
       </section>
+    </div>
+  `
+}
+
+function renderOnshapePanel() {
+  return `
+    <div class="onshape-panel" aria-labelledby="onshape-panel-title">
+      <header class="onshape-panel-header">
+        <div class="onshape-panel-brand"><span class="brand-mark" aria-hidden="true">BR</span><div><strong>BuildReady</strong><small>Manufacturing review</small></div></div>
+        <span class="extension-status" id="extension-status" data-status="idle">Starting</span>
+      </header>
+
+      <section class="extension-context-card" aria-live="polite">
+        <h1 id="onshape-panel-title">Active Part Studio</h1>
+        <p id="extension-context-message">Validating the Onshape extension context…</p>
+        <dl>
+          <div><dt>Document</dt><dd id="extension-document">—</dd></div>
+          <div><dt>Dimensions used</dt><dd id="extension-measurements">—</dd></div>
+          <div><dt>Checks available</dt><dd id="extension-coverage">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel-check" aria-labelledby="panel-check-title">
+        <div>
+          <h2 id="panel-check-title">Manufacturability check</h2>
+          <p>Review the dimensions this model provides against five configured CNC checks.</p>
+        </div>
+        <button type="button" id="panel-inspect" data-tool="inspect_cnc_manufacturability">Run check</button>
+        <output class="tool-output panel-output" id="tool-output" aria-live="polite">Ready when you are.</output>
+      </section>
+
+      <section class="findings-panel panel-findings" aria-labelledby="findings-title">
+        <div class="findings-heading"><div><h2 id="findings-title">Findings</h2><p>Ordered by severity. Select one to review its measurements.</p></div><span id="finding-count">Not run</span></div>
+        <div class="findings-list" id="findings-list"><p class="findings-empty">Run the check to see issues found in this Part Studio.</p></div>
+        <div class="finding-actions" aria-label="Selected finding actions">
+          <button type="button" class="secondary-button" id="issue-details-button" data-tool="get_issue_details" disabled>Explain selected finding</button>
+          <button type="button" class="secondary-button" id="preview-radius-button" data-tool="preview_radius_change" disabled>Preview radius change</button>
+        </div>
+      </section>
+
+      ${renderModelInsightAssistant('embedded')}
+
+      <details class="source-discovery panel-discovery"><summary>How dimensions were recognized</summary><div id="source-discovery-content"></div></details>
+
+      <details class="panel-more-actions">
+        <summary>Review and export</summary>
+        <div class="panel-actions" aria-label="Review and export actions">
+          <button type="button" class="secondary-button" id="quote-comparison-button" data-tool="prepare_quote_comparison" disabled>Compare sample suppliers</button>
+          <button type="button" class="secondary-button" id="panel-package" data-tool="generate_review_package" disabled>Create review package</button>
+          <button type="button" class="quiet-button" id="reset-demo-button">Clear results</button>
+        </div>
+      </details>
+
+      <section class="proposal-card panel-proposal" id="proposal-card" aria-labelledby="proposal-title" hidden>
+        <div class="proposal-heading"><div><p class="eyebrow">Human decision required</p><h2 id="proposal-title">Inside-radius preview</h2></div><span id="proposal-status">Pending</span></div>
+        <div class="proposal-comparison"><div><span>Before</span><strong id="proposal-before">—</strong></div><div aria-hidden="true">→</div><div><span>After</span><strong id="proposal-after">—</strong></div></div>
+        <p id="proposal-effect"></p>
+        <div class="proposal-actions"><button type="button" id="approve-proposal">Approve preview</button><button type="button" class="secondary-button" id="reject-proposal">Reject</button></div>
+        <p class="authority-note">This records a review decision only. It never edits the Onshape model.</p>
+      </section>
+
+      <section class="panel-package" id="panel-package-result" hidden>
+        <p class="eyebrow">Portable evidence</p><h2>Review package ready</h2>
+        <p id="panel-package-id"></p>
+        <div class="proposal-actions"><button type="button" data-download="json">Download JSON</button><button type="button" class="secondary-button" data-download="markdown">Download Markdown</button></div>
+      </section>
+
+      <details class="panel-audit"><summary>Technical details</summary>
+        <dl class="agent-metrics"><div><dt>Model version</dt><dd id="extension-revision">—</dd></div><div><dt>Tools</dt><dd id="registered-tool-count">0</dd></div><div><dt>Last action</dt><dd id="last-tool-call">None</dd></div></dl>
+        <span id="active-route" hidden>/onshape-panel</span>
+        <span class="registration-badge" id="registration-badge">Embedded controls</span>
+        <ol id="audit-events"><li>No actions recorded.</li></ol>
+      </details>
     </div>
   `
 }
@@ -543,9 +669,14 @@ function renderViewerSelection() {
 }
 
 function renderFindings(findingCount, findingsList) {
+  const highCount = workflowState.findings.filter((finding) => finding.severity === 'high').length
+  const mediumCount = workflowState.findings.filter((finding) => finding.severity === 'medium').length
   findingCount.textContent = workflowState.inspectionStatus === 'complete'
-    ? `${workflowState.findings.length} findings`
+    ? `${workflowState.findings.length} ${workflowState.findings.length === 1 ? 'issue' : 'issues'}`
     : 'Not run'
+  findingCount.title = workflowState.inspectionStatus === 'complete'
+    ? `${highCount} high priority, ${mediumCount} medium priority`
+    : ''
   const nextSignature = workflowState.findings.map((finding) => finding.findingId).join('|')
   if (nextSignature !== findingsSignature) {
     findingsSignature = nextSignature
@@ -553,13 +684,12 @@ function renderFindings(findingCount, findingsList) {
       ? workflowState.findings.map((finding) => `
         <button type="button" class="finding-card" data-finding-id="${finding.findingId}" data-feature-id="${finding.featureId}" data-severity="${finding.severity}" aria-pressed="false">
           <span class="finding-title-row">
-            <span>${finding.severity}</span>
-            <code>${finding.ruleId} · ${finding.featureId}</code>
+            <span>${finding.severity === 'high' ? 'High priority' : 'Medium priority'}</span>
+            <code>${finding.ruleId}</code>
           </span>
           <strong class="finding-card-title">${finding.title}</strong>
-          <span class="finding-copy"><b>Calculation:</b> ${finding.calculation}</span>
-          <span class="finding-copy"><b>Recommendation:</b> ${finding.recommendation}</span>
-          <small>${finding.evidenceReferences[0]}</small>
+          <span class="finding-copy">${finding.calculation}</span>
+          <span class="finding-copy"><b>Next step:</b> ${finding.recommendation}</span>
         </button>
       `).join('')
       : '<p class="findings-empty">Run the inspection to evaluate all five controlled CNC rules.</p>'
@@ -666,6 +796,41 @@ function updateDiagnostics() {
   bracketViewer?.selectFeature(workflowState.selectedFeatureId)
   renderViewerSelection()
   renderProposal()
+  updateOnshapePanel()
+}
+
+function updateOnshapePanel() {
+  const status = document.querySelector('#extension-status')
+  if (!status) return
+  status.textContent = onshapeExtensionStatus.phase.replace('_', ' ')
+  status.dataset.status = onshapeExtensionStatus.phase
+  const contextMessage = document.querySelector('#extension-context-message')
+  contextMessage.textContent = onshapeExtensionStatus.message
+
+  const provenance = workflowState.designSource.provenance
+  document.querySelector('#extension-document').textContent = provenance?.documentName ?? '—'
+  const revision = document.querySelector('#extension-revision')
+  if (revision) revision.textContent = provenance?.microversionId?.slice(0, 12) ?? '—'
+  document.querySelector('#extension-measurements').textContent = provenance
+    ? `${provenance.inferredMeasurementCount} of ${provenance.measurementCount}`
+    : '—'
+  const coverage = document.querySelector('#extension-coverage')
+  if (coverage) coverage.textContent = provenance ? `${provenance.applicableRuleCount} of 5` : '—'
+  renderDiscoverySummary(provenance)
+
+  const connected = onshapeExtensionStatus.phase === 'connected'
+  const inspect = document.querySelector('#panel-inspect')
+  const packageButton = document.querySelector('#panel-package')
+  if (inspect) inspect.disabled = !connected || workflowState.inspectionStatus === 'complete'
+  if (packageButton) {
+    packageButton.disabled = workflowState.supplierQuotes.length !== 2 || Boolean(workflowState.reviewPackage)
+  }
+  const packageResult = document.querySelector('#panel-package-result')
+  if (packageResult) {
+    packageResult.hidden = !workflowState.reviewPackage
+    const packageId = document.querySelector('#panel-package-id')
+    if (packageId) packageId.textContent = workflowState.reviewPackage?.packageId ?? ''
+  }
 }
 
 /**
@@ -693,8 +858,11 @@ function renderDesignSource() {
   const provenance = document.querySelector('#source-provenance')
   provenance.hidden = !isLive
   if (isLive) {
-    provenance.textContent = `Document: ${designSource.provenance.documentName} · ${designSource.provenance.measurementCount} live measurements · retrieved ${designSource.provenance.retrievedAt}`
+    provenance.textContent = `Document: ${designSource.provenance.documentName} · ${designSource.provenance.inferredMeasurementCount}/${designSource.provenance.measurementCount} variables inferred · ${designSource.provenance.applicableRuleCount}/5 rules applicable · retrieved ${designSource.provenance.retrievedAt}`
   }
+  const discovery = document.querySelector('#source-discovery')
+  if (discovery) discovery.hidden = !isLive
+  renderDiscoverySummary(isLive ? designSource.provenance : null)
 
   // Switching source discards derived evidence, so hide the control once the
   // engineer has work that a reload would throw away.
@@ -886,6 +1054,203 @@ function bindSimulationControls() {
   })
 }
 
+function renderDiscoverySummary(provenance) {
+  const container = document.querySelector('#source-discovery-content')
+  if (!container) return
+  container.replaceChildren()
+  const discovery = provenance?.discovery
+  if (!discovery) {
+    const empty = document.createElement('p')
+    empty.textContent = 'No live variable inventory is available.'
+    container.append(empty)
+    return
+  }
+
+  const list = document.createElement('dl')
+  for (const mapping of discovery.mappings) {
+    const row = document.createElement('div')
+    const term = document.createElement('dt')
+    const detail = document.createElement('dd')
+    term.textContent = measurementLabel(mapping.roleId)
+    detail.textContent = `#${mapping.variableName} = ${mapping.expression} · ${mapping.confidence} match`
+    row.append(term, detail)
+    list.append(row)
+  }
+  container.append(list)
+
+  if (discovery.unmapped.length > 0 || discovery.rejected.length > 0) {
+    const note = document.createElement('p')
+    const unmapped = discovery.unmapped.map((variable) => `#${variable.name}`)
+    const rejected = discovery.rejected.map((variable) => `#${variable.name}`)
+    note.textContent = `Not needed for the current checks: ${[...unmapped, ...rejected].join(', ')}`
+    container.append(note)
+  }
+}
+
+function downloadText(filename, contents, type) {
+  const blob = new Blob([contents], { type })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+function formatInsightTime(timestamp) {
+  const date = new Date(timestamp)
+  return Number.isNaN(date.valueOf())
+    ? ''
+    : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
+}
+
+function appendInsightMessage(container, entry) {
+  const article = document.createElement('article')
+  article.className = 'insight-message'
+  article.dataset.role = entry.role
+
+  const meta = document.createElement('div')
+  meta.className = 'insight-message-meta'
+  const author = document.createElement('strong')
+  author.textContent = entry.role === 'user' ? 'You' : 'BuildReady'
+  const time = document.createElement('time')
+  time.dateTime = entry.timestamp
+  time.textContent = formatInsightTime(entry.timestamp)
+  meta.append(author, time)
+
+  const body = document.createElement('p')
+  body.textContent = entry.text
+  article.append(meta, body)
+
+  if (entry.citations?.length) {
+    const evidence = document.createElement('details')
+    evidence.className = 'insight-evidence'
+    const summary = document.createElement('summary')
+    summary.textContent = `${entry.citations.length} evidence ${entry.citations.length === 1 ? 'reference' : 'references'}`
+    const list = document.createElement('ul')
+    for (const citation of entry.citations) {
+      const item = document.createElement('li')
+      const label = document.createElement('strong')
+      const reference = document.createElement('code')
+      label.textContent = citation.label
+      reference.textContent = citation.reference
+      item.append(label, reference)
+      list.append(item)
+    }
+    evidence.append(summary, list)
+    article.append(evidence)
+  }
+  container.append(article)
+}
+
+function renderModelInsightConversation() {
+  const container = document.querySelector('#insight-transcript')
+  const suggestions = document.querySelector('#insight-suggestions')
+  if (!container || !suggestions) return
+
+  modelInsight.syncContext()
+  const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+  container.replaceChildren()
+  for (const entry of modelInsight.messages) appendInsightMessage(container, entry)
+
+  if (modelInsight.busy) {
+    const thinking = document.createElement('article')
+    thinking.className = 'insight-message insight-thinking'
+    thinking.dataset.role = 'assistant'
+    const label = document.createElement('span')
+    label.textContent = 'Checking the current model…'
+    thinking.append(label)
+    container.append(thinking)
+  }
+
+  suggestions.replaceChildren()
+  for (const question of modelInsight.suggestions()) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'insight-suggestion'
+    button.textContent = question
+    button.disabled = modelInsight.busy
+    button.addEventListener('click', () => void submitInsightQuestion(question))
+    suggestions.append(button)
+  }
+
+  const send = document.querySelector('#insight-send')
+  const stop = document.querySelector('#insight-stop')
+  const input = document.querySelector('#insight-input')
+  if (send) {
+    send.disabled = modelInsight.busy
+    send.textContent = modelInsight.busy ? 'Checking…' : 'Ask'
+  }
+  if (stop) stop.hidden = !modelInsight.busy
+  if (input) input.disabled = modelInsight.busy
+
+  const provenance = workflowState.designSource.provenance
+  const grounding = document.querySelector('#insight-grounding-label')
+  if (grounding) {
+    grounding.textContent = workflowState.designSource.sourceId === 'onshape-live'
+      ? 'Current model'
+      : 'Sample model'
+  }
+  if (nearBottom || modelInsight.busy) container.scrollTop = container.scrollHeight
+}
+
+async function submitInsightQuestion(question) {
+  const input = document.querySelector('#insight-input')
+  const normalizedQuestion = String(question ?? input?.value ?? '').trim()
+  if (!normalizedQuestion || modelInsight.busy) return
+  if (input) input.value = ''
+  const pending = modelInsight.ask(normalizedQuestion)
+  renderModelInsightConversation()
+  await pending
+  renderModelInsightConversation()
+}
+
+function bindModelInsightAssistant() {
+  if (!document.querySelector('#insight-form')) return
+  modelInsight.syncContext()
+  renderModelInsightConversation()
+
+  document.querySelector('#insight-form')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    void submitInsightQuestion()
+  })
+  document.querySelector('#insight-input')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault()
+      event.currentTarget.form?.requestSubmit()
+    }
+  })
+  document.querySelector('#insight-stop')?.addEventListener('click', () => modelInsight.stop())
+  document.querySelector('#insight-clear')?.addEventListener('click', () => {
+    modelInsight.clear()
+    renderModelInsightConversation()
+    document.querySelector('#insight-input')?.focus()
+  })
+  document.querySelector('#insight-export-md')?.addEventListener('click', () => {
+    downloadText(
+      `${activeDesign().designId}-${activeDesign().revisionId}-model-insight.md`,
+      modelInsight.markdown(),
+      'text/markdown',
+    )
+  })
+  document.querySelector('#insight-export-json')?.addEventListener('click', () => {
+    downloadText(
+      `${activeDesign().designId}-${activeDesign().revisionId}-model-insight.json`,
+      modelInsight.json(),
+      'application/json',
+    )
+  })
+  document.querySelector('#insight-copy')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget
+    try {
+      await navigator.clipboard.writeText(modelInsight.markdown())
+      button.textContent = 'Copied'
+    } catch {
+      button.textContent = 'Copy unavailable'
+    }
+    window.setTimeout(() => { button.textContent = 'Copy' }, 1600)
+  })
+}
+
 function bindDesignSourceControls() {
   document.querySelector('#load-onshape-source')?.addEventListener('click', async () => {
     const button = document.querySelector('#load-onshape-source')
@@ -982,7 +1347,9 @@ function bindWorkflowControls() {
     resetFeaState()
     bracketViewer?.resetCamera()
     const output = document.querySelector('#tool-output')
-    if (output) output.textContent = 'Demo reset to the original BRKT-001-B fixture.'
+    if (output) output.textContent = document.body.classList.contains('onshape-embedded')
+      ? 'Results cleared. The active Part Studio is still connected.'
+      : 'Demo reset to the original BRKT-001-B fixture.'
   })
 
   document.querySelectorAll('[data-download]').forEach((button) => {
@@ -993,12 +1360,11 @@ function bindWorkflowControls() {
       const contents = isJson
         ? JSON.stringify(workflowState.reviewPackage, null, 2)
         : serializeReviewPackageMarkdown(workflowState.reviewPackage)
-      const blob = new Blob([contents], { type: isJson ? 'application/json' : 'text/markdown' })
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
-      link.download = `${workflowState.reviewPackage.packageId}.${isJson ? 'json' : 'md'}`
-      link.click()
-      URL.revokeObjectURL(link.href)
+      downloadText(
+        `${workflowState.reviewPackage.packageId}.${isJson ? 'json' : 'md'}`,
+        contents,
+        isJson ? 'application/json' : 'text/markdown',
+      )
     })
   })
 }
@@ -1024,15 +1390,35 @@ function bindManualToolControls() {
           : {}
 
       button.disabled = true
-      if (output) output.textContent = `Calling ${toolName}…`
+      if (output) output.textContent = document.body.classList.contains('onshape-embedded')
+        ? 'Checking the active model…'
+        : `Calling ${toolName}…`
 
       try {
         const result = await executeGate7Tool(toolName, input)
-        if (output) output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+        if (output && document.body.classList.contains('onshape-embedded')) {
+          if (toolName === 'inspect_cnc_manufacturability') {
+            const high = workflowState.findings.filter((finding) => finding.severity === 'high').length
+            const medium = workflowState.findings.filter((finding) => finding.severity === 'medium').length
+            output.textContent = `Check complete: ${workflowState.findings.length} issues found (${high} high priority, ${medium} medium priority). ${workflowState.inspection.coverage.evaluatedRuleCount} of ${workflowState.inspection.coverage.availableRules} checks ran.`
+          } else if (toolName === 'get_issue_details') {
+            output.textContent = 'The selected finding is ready below. You can also ask BuildReady a follow-up question.'
+          } else if (toolName === 'preview_radius_change') {
+            output.textContent = 'Preview prepared. This is a review suggestion only; the Onshape model was not changed.'
+          } else if (toolName === 'prepare_quote_comparison') {
+            output.textContent = 'Sample supplier comparison prepared.'
+          } else if (toolName === 'generate_review_package') {
+            output.textContent = 'Review package created.'
+          }
+        } else if (output) {
+          output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+        }
       } catch (error) {
-        if (output) output.textContent = JSON.stringify(toolErrorEnvelope(error), null, 2)
+        if (output) output.textContent = document.body.classList.contains('onshape-embedded')
+          ? toolErrorEnvelope(error).error.message
+          : JSON.stringify(toolErrorEnvelope(error), null, 2)
       } finally {
-        button.disabled = false
+        updateDiagnostics()
       }
     })
   })
@@ -1086,6 +1472,7 @@ async function renderRoute() {
     synchronizeSimulationWorkspace()
   }
   if (path === '/review') synchronizeReviewSimulation()
+  bindModelInsightAssistant()
   bindManualToolControls()
   bindWorkflowControls()
   updateDiagnostics()
@@ -1109,11 +1496,16 @@ window.addEventListener('popstate', () => void renderRoute())
 window.addEventListener('buildready:navigate', (event) => {
   const route = event.detail?.route
   if (!routes[route]) return
+  if (normalizePath(window.location.pathname) === '/onshape-panel') {
+    void renderRoute()
+    return
+  }
   window.history.pushState({}, '', route)
   void renderRoute()
 })
 window.addEventListener('buildready:statechange', updateDiagnostics)
 window.addEventListener('buildready:statechange', synchronizeDesignWorkspace)
+window.addEventListener('buildready:statechange', renderModelInsightConversation)
 window.addEventListener('buildready:feachange', () => {
   updateDiagnostics()
   synchronizeSimulationWorkspace()
@@ -1126,8 +1518,43 @@ globalResetButton.addEventListener('click', () => {
   void renderRoute()
 })
 
-void renderRoute()
+async function startApplication() {
+  const panelMode = normalizePath(window.location.pathname) === '/onshape-panel'
+  document.documentElement.classList.toggle('onshape-embedded-root', panelMode)
+  document.body.classList.toggle('onshape-embedded', panelMode)
+  await renderRoute()
 
-// Probed once, after first paint. A deployment without Onshape credentials
-// simply never offers the control, and the controlled fixture path is unaffected.
-void onshapeSourceAvailable().then(setOnshapeAvailability)
+  if (!panelMode) {
+    // Probed once, after first paint. A deployment without Onshape credentials
+    // simply never offers the control, and the fixture path is unaffected.
+    void onshapeSourceAvailable().then(setOnshapeAvailability)
+    return
+  }
+
+  try {
+    onshapeExtensionContext = parseOnshapeExtensionContext()
+    configureOnshapeExtensionContext(onshapeExtensionContext)
+    onshapeBridge = connectOnshapeExtension(onshapeExtensionContext, {
+      onMessage(message) {
+        if (message.messageName === 'show' || message.messageName === 'takeFocus') {
+          document.querySelector('#panel-inspect')?.focus({ preventScroll: true })
+        }
+      },
+    })
+    onshapeExtensionStatus = { phase: 'connecting', message: 'Reading dimensions from this Part Studio…' }
+    updateOnshapePanel()
+    setOnshapeAvailability(true)
+    await gate7Handlers.load_onshape_design({}, {})
+    onshapeExtensionStatus = {
+      phase: 'connected',
+      message: 'Ready to check this Part Studio. BuildReady reads named dimensions and will not change your model.',
+    }
+  } catch (error) {
+    const envelope = toolErrorEnvelope(error)
+    onshapeExtensionStatus = { phase: 'failed', message: envelope.error.message }
+  }
+  updateDiagnostics()
+}
+
+window.addEventListener('beforeunload', () => onshapeBridge?.dispose(), { once: true })
+void startApplication()

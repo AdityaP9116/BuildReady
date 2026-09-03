@@ -8,74 +8,15 @@
     "note": "Server-side credentials resolve the document. These identifiers are public and safe to ship.",
     "documentUrlTemplate": "https://cad.onshape.com/documents/{documentId}/w/{workspaceId}/e/{elementId}"
   },
-  "variableMap": [
-    {
-      "variableName": "insideRadius",
-      "featureId": "inside-pocket-corner",
-      "dimensionKey": "insideRadiusMm",
-      "minimumMm": 0.1,
-      "maximumMm": 50.0
-    },
-    {
-      "variableName": "cutterRadius",
-      "featureId": "inside-pocket-corner",
-      "dimensionKey": "selectedCutterRadiusMm",
-      "minimumMm": 0.1,
-      "maximumMm": 50.0
-    },
-    {
-      "variableName": "pocketDepth",
-      "featureId": "deep-pocket",
-      "dimensionKey": "depthMm",
-      "minimumMm": 0.1,
-      "maximumMm": 500.0
-    },
-    {
-      "variableName": "pocketMinWidth",
-      "featureId": "deep-pocket",
-      "dimensionKey": "minWidthMm",
-      "minimumMm": 0.1,
-      "maximumMm": 500.0
-    },
-    {
-      "variableName": "wallThickness",
-      "featureId": "thin-wall",
-      "dimensionKey": "thicknessMm",
-      "minimumMm": 0.1,
-      "maximumMm": 100.0
-    },
-    {
-      "variableName": "holeDepth",
-      "featureId": "deep-drilled-hole",
-      "dimensionKey": "depthMm",
-      "minimumMm": 0.1,
-      "maximumMm": 500.0
-    },
-    {
-      "variableName": "holeDiameter",
-      "featureId": "deep-drilled-hole",
-      "dimensionKey": "diameterMm",
-      "minimumMm": 0.1,
-      "maximumMm": 100.0
-    },
-    {
-      "variableName": "mountingHoleDiameter",
-      "featureId": "mounting-hole-tolerance",
-      "dimensionKey": "diameterMm",
-      "minimumMm": 0.1,
-      "maximumMm": 100.0
-    },
-    {
-      "variableName": "mountingTolerance",
-      "featureId": "mounting-hole-tolerance",
-      "dimensionKey": "tolerancePlusMinusMm",
-      "minimumMm": 0.001,
-      "maximumMm": 5.0
-    }
-  ],
+  "discovery": {
+    "strategy": "semantic-token-scoring",
+    "minimumConfidence": "medium",
+    "partialCoverage": true,
+    "note": "BuildReady inventories every literal length variable and infers manufacturing roles from names and feature provenance. No exact variable names are required. Ambiguous values are left unmapped."
+  },
   "writeBackPolicy": {
     "policyVersion": "onshape-writeback-1.0.0",
-    "variableName": "insideRadius",
+    "semanticRole": "cornerRadius",
     "requiresHumanDecision": "approved",
     "targetMode": "new-branch-workspace-only",
     "forbiddenTargets": ["main-workspace", "released-version"],
