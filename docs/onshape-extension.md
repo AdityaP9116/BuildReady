@@ -73,9 +73,16 @@ roles; the identifiers shown are examples, not fixed requirements:
 
 Use descriptive names combining context and measurement, such as
 `internal_relief_rad`, `cavity_min_span`, or `fixture_bolt_fit_tol`. Only literal
-lengths such as `3.5 mm` or `0.125 in` are accepted. Expressions, arithmetic,
+lengths such as `3.5 mm`, `0.125 in`, or `1/8 in` are accepted. Expressions, arithmetic,
 and variable references are rejected rather than interpreted. Ambiguous values
 remain unmapped, and rules run only when their complete measurement group exists.
+
+The five screening definitions are intentional configuration, not UI constants.
+Their dimension groups are declared in `web/onshape-source.json`, and thresholds
+live in `web/cnc-domain.json`. The panel derives its counts and radius-preview
+value from those files. Live designs never inherit the sample fixture's material
+or production quantity; both remain unspecified until a future properties layer
+can read them from the active document.
 
 Check coverage before registering the extension:
 
@@ -133,7 +140,7 @@ settings):
    - Action URL:
 
 ```text
-https://YOUR_HOST/onshape-panel?documentId={$documentId}&workspaceOrVersion={$workspaceOrVersion}&workspaceOrVersionId={$workspaceOrVersionId}&elementId={$elementId}&build=20260903-1
+https://YOUR_HOST/onshape-panel?documentId={$documentId}&workspaceOrVersion={$workspaceOrVersion}&workspaceOrVersionId={$workspaceOrVersionId}&elementId={$elementId}&build=20260903-2
 ```
 
 Onshape automatically adds default query parameters including `server`. The
@@ -168,8 +175,7 @@ Run this against a non-production document:
 7. Ask to preview the recommended radius. Confirm no Onshape feature or variable changes.
 8. Ask the assistant to approve it. Confirm it refuses, then approve or reject
    using only the visible panel control.
-9. Ask for the controlled supplier comparison and review package. Download the
-   package and the separate Model Insight Markdown/JSON transcript.
+9. Export the Model Insight Markdown/JSON transcript if an external record is needed.
 10. Reload the same revision and confirm its conversation persists. Clear the
     transcript and confirm workflow evidence is not deleted.
 11. Edit the variable recognized as `cornerRadius` in Onshape, regenerate, then

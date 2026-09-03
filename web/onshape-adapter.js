@@ -8,7 +8,7 @@
  * identical in form to controlled-fixture findings.
  */
 
-import { discoverManufacturingVariables } from './onshape-discovery.js?v=20260903-1'
+import { discoverManufacturingVariables } from './onshape-discovery.js?v=20260903-2'
 
 /** Length units accepted in an Onshape quantity expression, expressed in millimetres. */
 const UNIT_TO_MM = Object.freeze({
@@ -27,8 +27,8 @@ const UNIT_TO_MM = Object.freeze({
   foot: 304.8,
 })
 
-/** `1 mm`, `0.02mm`, `3.5 * mm`, `1/8 in` is rejected — only a plain magnitude and unit. */
-const QUANTITY_PATTERN = /^\s*(-?\d+(?:\.\d+)?)\s*\*?\s*([A-Za-z]+)\s*$/
+/** Literal decimal or simple fractional lengths, such as `3.5 mm` or `1/8 in`. */
+const QUANTITY_PATTERN = /^\s*(-?(?:\d+(?:\.\d+)?|\d+\s*\/\s*\d+))\s*\*?\s*([A-Za-z]+)\s*$/
 
 export class OnshapeAdapterError extends Error {
   constructor(code, message) {
@@ -56,7 +56,10 @@ export function parseQuantityMm(expression) {
     )
   }
 
-  const magnitude = Number(match[1])
+  const magnitudeText = match[1]
+  const magnitude = magnitudeText.includes('/')
+    ? magnitudeText.split('/').map(Number).reduce((numerator, denominator) => numerator / denominator)
+    : Number(magnitudeText)
   const factor = UNIT_TO_MM[match[2].toLowerCase()]
   if (!Number.isFinite(magnitude) || factor === undefined) {
     throw new OnshapeAdapterError('ONSHAPE_BAD_QUANTITY', `unsupported unit in "${expression.slice(0, 32)}".`)
@@ -71,8 +74,9 @@ export function parseQuantityMm(expression) {
  * Builds a design fixture of the same shape the rule engine already consumes,
  * with every mapped dimension replaced by its live Onshape measurement.
  *
- * `baseFixture` supplies the non-geometric context (material, process, quantity,
- * feature labels, highlight ids) that Onshape variables do not describe.
+ * The sample fixture is used only for optional visual highlight metadata. Live
+ * material and production quantity are deliberately left unspecified because
+ * the Part Studio variable endpoint does not provide them.
  */
 export function mapOnshapeToDesign(payload, source, baseFixture) {
   if (!payload?.ok || !Array.isArray(payload.variables)) {
@@ -80,21 +84,27 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
   }
   const discovery = discoverManufacturingVariables(payload.variables, parseQuantityMm)
   const byRole = new Map(discovery.mappings.map((mapping) => [mapping.roleId, mapping]))
-  const featureDefinitions = [
-    ['inside-pocket-corner', { insideRadiusMm: 'cornerRadius', selectedCutterRadiusMm: 'cutterRadius' }],
-    ['deep-pocket', { depthMm: 'pocketDepth', minWidthMm: 'pocketWidth' }],
-    ['thin-wall', { thicknessMm: 'wallThickness' }],
-    ['deep-drilled-hole', { depthMm: 'deepHoleDepth', diameterMm: 'deepHoleDiameter' }],
-    ['mounting-hole-tolerance', { diameterMm: 'mountHoleDiameter', tolerancePlusMinusMm: 'mountTolerance' }],
-  ]
+  const featureDefinitions = source?.measurementGroups
+  if (!Array.isArray(featureDefinitions) || featureDefinitions.length === 0) {
+    throw new OnshapeAdapterError('ONSHAPE_BAD_CONFIG', 'no manufacturing checks are configured for this source.')
+  }
 
   const features = []
-  for (const [featureId, dimensions] of featureDefinitions) {
+  for (const definition of featureDefinitions) {
+    const { featureId, dimensions, label, ruleId } = definition
+    if (!featureId || !ruleId || !dimensions || typeof dimensions !== 'object') {
+      throw new OnshapeAdapterError('ONSHAPE_BAD_CONFIG', 'a configured manufacturing check is incomplete.')
+    }
     const entries = Object.entries(dimensions)
     if (!entries.every(([, roleId]) => byRole.has(roleId))) continue
     const base = baseFixture.features.find((feature) => feature.featureId === featureId)
     features.push({
       ...base,
+      featureId,
+      label: base?.label ?? label ?? featureId,
+      featureType: base?.featureType ?? 'measured-region',
+      applicableRuleIds: [ruleId],
+      highlightIds: base?.highlightIds ?? [],
       dimensions: Object.fromEntries(entries.map(([key, roleId]) => [key, byRole.get(roleId).valueMm])),
       inputReviewStatus: 'inferred-unreviewed',
       measurementProvenance: Object.fromEntries(entries.map(([key, roleId]) => [key, { ...byRole.get(roleId) }])),
@@ -104,7 +114,7 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
   if (features.length === 0) {
     throw new OnshapeAdapterError(
       'ONSHAPE_NO_APPLICABLE_MEASUREMENTS',
-      'no complete manufacturing measurement groups could be inferred from the Part Studio variables.',
+      'BuildReady could not find a complete set of named dimensions for any configured check. Add descriptive Part Studio variables, then try again.',
     )
   }
 
@@ -133,10 +143,15 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
       sourceIdentity: { documentId: payload.document.documentId, elementId: payload.document.elementId,
         workspaceOrVersion: scope, workspaceOrVersionId: scopeId, microversionId: microversion,
         configuration: 'default', selectedPartIds: [], evidenceLevel: 'parameter-snapshot-not-exported-cad' },
-      material: { id: 'unknown', label: 'Material not reviewed', reviewStatus: 'unknown' },
-      process: { id: 'unreviewed-cnc', label: 'CNC demonstration checks (process not reviewed)', reviewStatus: 'unknown' },
       revisionId,
       fixtureVersion: `onshape-${payload.serializationVersion ?? '1.0.0'}`,
+      material: { id: 'unspecified', label: 'Material not provided by Onshape', reviewStatus: 'unknown' },
+      process: {
+        id: source.reviewContext?.processId ?? 'cnc-screening',
+        label: source.reviewContext?.processLabel ?? 'CNC milling screening',
+        reviewStatus: 'unknown',
+      },
+      quantity: null,
       features: features.map((feature) => ({
         ...feature,
         objectReference: `onshape://${payload.document.documentId}/${payload.document.elementId}/${feature.featureId}`,
@@ -163,6 +178,12 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
       measurementCount: discovery.inventory.length,
       inferredMeasurementCount: discovery.mappings.length,
       applicableRuleCount: features.length,
+      availableRuleCount: featureDefinitions.length,
+      contextAssumptions: {
+        material: source.reviewContext?.material ?? 'not-provided',
+        process: 'configured-screening-policy',
+        quantity: source.reviewContext?.quantity ?? 'not-provided',
+      },
       featureSummary: payload.featureSummary ?? [],
       discovery,
     },

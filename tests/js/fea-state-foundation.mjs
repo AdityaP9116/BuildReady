@@ -16,9 +16,9 @@ globalThis.fetch = async (input, options) => {
   if (url.protocol === 'file:') return new Response(fs.readFileSync(fileURLToPath(url)))
   return handleApi(url, options)
 }
-const state = await import('../../web/state.js?v=20260903-1')
-const fea = await import('../../web/fea-state.js?v=20260903-1')
-const { ModelInsightAssistant } = await import('../../web/insight-assistant.js?v=20260903-1')
+const state = await import('../../web/state.js?v=20260903-2')
+const fea = await import('../../web/fea-state.js?v=20260903-2')
+const { ModelInsightAssistant } = await import('../../web/insight-assistant.js?v=20260903-2')
 const input = { forceN: 441, direction: [1e-9, -1, 0], meshPreset: 'medium', minimumSafetyFactor: 2, maximumDisplacementMm: 1 }
 
 test('preparation uses the server fingerprint and exposes the returned frozen manifest', async () => {

@@ -149,8 +149,11 @@ export function composeInsightResponse(intent, snapshot) {
     )
   }
   if (intent.kind === 'context') {
+    const materialContext = design.material?.id === 'unspecified'
+      ? 'Material is not available from the current Onshape data, so material-specific conclusions are not included.'
+      : `The selected material is ${design.material.label}.`
     return response(
-      `You’re reviewing ${design.name} from the ${source}. BuildReady recognized ${design.features.length} complete measurement groups for ${design.process.label}. This is a read-only snapshot, not automatic CAD synchronization. Check the revision after edits before using derived evidence.`,
+      `You’re reviewing ${design.name} from ${source}. BuildReady recognized ${design.features.length} complete sets of dimensions for ${design.process.label}. ${materialContext} This is a read-only snapshot, not automatic CAD synchronization. Check the revision after edits before using derived evidence.`,
       intent.kind,
       { followUps: ['Run a full manufacturability check', 'How were variables mapped?', 'Show rule coverage'] },
     )
@@ -160,7 +163,7 @@ export function composeInsightResponse(intent, snapshot) {
       return response('A live Onshape source is not available in this deployment or cannot replace the current reviewed state. Use the visible source control before inspection.', intent.kind)
     }
     return response(
-      `Loaded ${design.name}. BuildReady used ${provenance.inferredMeasurementCount} of ${provenance.measurementCount} named dimensions, so ${provenance.applicableRuleCount} of 5 checks are available.`,
+      `Loaded ${design.name}. BuildReady used ${provenance.inferredMeasurementCount} of ${provenance.measurementCount} named dimensions, so ${provenance.applicableRuleCount} of ${provenance.availableRuleCount ?? workflow.inspection?.coverage?.availableRules ?? 'the configured'} checks are available.`,
       intent.kind,
       { followUps: ['Run a full manufacturability check', 'How were variables mapped?', 'What model is active?'] },
     )
@@ -197,7 +200,7 @@ export function composeInsightResponse(intent, snapshot) {
   if (intent.kind === 'inspect' || intent.kind === 'risks') {
     if (!workflow.inspection) return response('The inspection could not be created for the current model.', intent.kind)
     if (findings.length === 0) {
-      return response(`The inspection evaluated ${workflow.inspection.coverage.evaluatedRuleCount} applicable rules and found no violations in this demonstration rule set.`, intent.kind, { followUps: ['Show rule coverage', 'Show model measurements'] })
+      return response(`The check ran ${workflow.inspection.coverage.evaluatedRuleCount} applicable checks and found no issues at the configured thresholds.`, intent.kind, { followUps: ['Show rule coverage', 'Show model measurements'] })
     }
     const top = findings.map((finding, index) => `${index + 1}. ${finding.severity.toUpperCase()} — ${finding.title} (${finding.calculation})`)
     return response(

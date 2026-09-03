@@ -3,15 +3,15 @@ import {
   activeSnapshotKey,
   gate7Handlers,
   workflowState,
-} from './state.js?v=20260903-1'
-import { PROPOSAL_POLICY } from './domain.js?v=20260903-1'
+} from './state.js?v=20260903-2'
+import { PROPOSAL_POLICY } from './domain.js?v=20260903-2'
 import {
   classifyInsightQuery,
   composeInsightResponse,
   suggestedInsightQuestions,
   transcriptMarkdown,
-} from './insight-engine.js?v=20260903-1'
-import { toolErrorEnvelope } from './error-contract.js?v=20260903-1'
+} from './insight-engine.js?v=20260903-2'
+import { toolErrorEnvelope } from './error-contract.js?v=20260903-2'
 
 const MAX_MESSAGES = 40
 // Version persisted conversations so a deployment never restores answers made

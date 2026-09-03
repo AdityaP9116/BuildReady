@@ -36,6 +36,12 @@ Use the existing uv launch command. Configure `WORKSPACE_ACCESS_TOKEN` in the se
 
 No complete F or Q gate is claimed. This push preserves an in-progress checkpoint, not a production-ready release.
 
+### Partner merge and push verification
+
+The requested push found newer partner commit `5ca91d9` on `origin/main`. Local work was first preserved in `1c112d5`, then the partner changes were merged without replacing remote history. Resolution preserves the partner's generic Onshape context, unspecified live material/quantity and removal of fixture citations from live evidence, together with full source identities, measurement provenance, freshness guards, server-authoritative FEA preparation and the panel's identity-only workspace link. Browser and regression-test imports use the same updated module version to avoid duplicate state/client instances.
+
+Post-merge checks: **152 Python tests and 17 JavaScript tests passed**, plus source/document/syntax checks and the **33-file static build**. No account-backed simulation, sourcing browser acceptance or genuine quote acquisition was added by this merge. Credential-pattern and staged-path checks found no private keys, recognized access tokens, environment secrets, runtime databases, original CAD or supplier PDFs in the staged changes. Ignored runtime data remains local. GitHub CI results are separate from these local checks and are not claimed here.
+
 ## Historical initial slice
 
 ## Baseline and preserved work

@@ -74,7 +74,7 @@ class ProductPolishTests(unittest.TestCase):
     def test_model_insight_is_embedded_with_accessible_chat_controls(self) -> None:
         for marker in (
             "Ask BuildReady",
-            "Manufacturability check",
+            "Check this model",
             "How dimensions were recognized",
             'id="insight-transcript" role="log"',
             'id="insight-input"',

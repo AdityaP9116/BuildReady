@@ -192,9 +192,9 @@ class CncRuleTests(unittest.TestCase):
         ]
         envelope = {
             "ok": True,
-            "inspectionId": "inspection-BRKT-001-B-cnc-demo-1.0.0",
+            "inspectionId": "inspection-BRKT-001-B-cnc-dfm-1.1.0",
             "revisionPrecondition": "BRKT-001/B@1.0.0",
-            "ruleSetVersion": "cnc-demo-1.0.0",
+            "ruleSetVersion": "cnc-dfm-1.1.0",
             "generatedAt": "2026-08-30T00:00:00.000Z",
             "counts": {"total": 5, "high": 2, "medium": 3},
             "findings": compact_findings,
@@ -209,7 +209,7 @@ class CncRuleTests(unittest.TestCase):
         finding = evaluate_rule(domain, rule)
         envelope = {
             "ok": True,
-            "inspectionId": "inspection-BRKT-001-B-cnc-demo-1.0.0",
+            "inspectionId": "inspection-BRKT-001-B-cnc-dfm-1.1.0",
             "revisionPrecondition": "BRKT-001/B@1.0.0",
             "finding": {
                 "findingId": finding["findingId"],

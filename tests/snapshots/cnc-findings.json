@@ -9,7 +9,7 @@
     "calculation": "1 mm < 3.5 mm",
     "evidenceReferences": [
       "fixture://BRKT-001/B/features/inside-pocket-corner",
-      "ruleset://cnc-demo-1.0.0/CNC-R001"
+      "ruleset://cnc-dfm-1.1.0/CNC-R001"
     ]
   },
   {
@@ -22,7 +22,7 @@
     "calculation": "24 / 6 = 4 > 3",
     "evidenceReferences": [
       "fixture://BRKT-001/B/features/deep-pocket",
-      "ruleset://cnc-demo-1.0.0/CNC-R002"
+      "ruleset://cnc-dfm-1.1.0/CNC-R002"
     ]
   },
   {
@@ -35,7 +35,7 @@
     "calculation": "0.8 mm < 1.5 mm",
     "evidenceReferences": [
       "fixture://BRKT-001/B/features/thin-wall",
-      "ruleset://cnc-demo-1.0.0/CNC-R003"
+      "ruleset://cnc-dfm-1.1.0/CNC-R003"
     ]
   },
   {
@@ -48,7 +48,7 @@
     "calculation": "30 / 5 = 6 > 4",
     "evidenceReferences": [
       "fixture://BRKT-001/B/features/deep-drilled-hole",
-      "ruleset://cnc-demo-1.0.0/CNC-R004"
+      "ruleset://cnc-dfm-1.1.0/CNC-R004"
     ]
   },
   {
@@ -61,7 +61,7 @@
     "calculation": "0.02 mm < 0.05 mm",
     "evidenceReferences": [
       "fixture://BRKT-001/B/features/mounting-hole-tolerance",
-      "ruleset://cnc-demo-1.0.0/CNC-R005"
+      "ruleset://cnc-dfm-1.1.0/CNC-R005"
     ]
   }
 ]

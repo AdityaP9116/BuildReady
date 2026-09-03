@@ -1,9 +1,9 @@
-import { DESIGN_FIXTURE, RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js?v=20260903-1'
-import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rules.js?v=20260903-1'
-import { revisionPrecondition, validateRadiusProposal, WorkflowRuleError } from './workflow-rules.js?v=20260903-1'
-import { prepareQuoteComparison } from './quote-engine.js?v=20260903-1'
-import { createReviewPackage } from './review-package.js?v=20260903-1'
-import { attachToolErrorContract } from './error-contract.js?v=20260903-1'
+import { DESIGN_FIXTURE, RULE_SET_SCOPE, RULE_SET_VERSION } from './domain.js?v=20260903-2'
+import { compactInspectionResult, evaluateCncManufacturability } from './cnc-rules.js?v=20260903-2'
+import { revisionPrecondition, validateRadiusProposal, WorkflowRuleError } from './workflow-rules.js?v=20260903-2'
+import { prepareQuoteComparison } from './quote-engine.js?v=20260903-2'
+import { createReviewPackage } from './review-package.js?v=20260903-2'
+import { attachToolErrorContract } from './error-contract.js?v=20260903-2'
 
 export { DESIGN_FIXTURE }
 
@@ -198,7 +198,7 @@ async function getActiveDesignContext(input, { signal } = {}) {
   return {
     ok: true,
     context: activeDesignContext(),
-    nextAction: 'Run inspect_cnc_manufacturability to evaluate the five controlled CNC rules.',
+    nextAction: 'Run inspect_cnc_manufacturability to evaluate the checks supported by this model.',
   }
 }
 
@@ -542,7 +542,7 @@ async function loadOnshapeDesign(input, { signal } = {}) {
   assertEmptyObject(input)
   const requestSequence = ++onshapeLoadSequence
 
-  const { fetchOnshapeDesign } = await import('./onshape-client.js?v=20260903-1')
+  const { fetchOnshapeDesign } = await import('./onshape-client.js?v=20260903-2')
   const { design, provenance } = await fetchOnshapeDesign(signal)
   abortIfRequested(signal)
   if (requestSequence !== onshapeLoadSequence) {
@@ -566,6 +566,7 @@ async function loadOnshapeDesign(input, { signal } = {}) {
     measurementCount: provenance.measurementCount,
     inferredMeasurementCount: provenance.inferredMeasurementCount,
     applicableRuleCount: provenance.applicableRuleCount,
+    availableRuleCount: provenance.availableRuleCount,
     variableMappings: provenance.discovery.mappings.map((mapping) => ({
       roleId: mapping.roleId,
       variableName: mapping.variableName,
@@ -610,7 +611,7 @@ async function checkOnshapeRevision(input, { signal } = {}) {
   const requestSequence = ++onshapeLoadSequence
   workflowState.sourceFreshness = 'checking'
   emitStateChange({ reason: 'source-freshness-changed' })
-  const { fetchOnshapeDesign } = await import('./onshape-client.js?v=20260903-1')
+  const { fetchOnshapeDesign } = await import('./onshape-client.js?v=20260903-2')
   let candidateResponse
   try {
     candidateResponse = await fetchOnshapeDesign(signal)

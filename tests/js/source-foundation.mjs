@@ -24,11 +24,11 @@ globalThis.fetch = async (input) => {
   calls.push(url)
   return Response.json(payload)
 }
-const client = await import('../../web/onshape-client.js?v=20260903-1')
-const state = await import('../../web/state.js?v=20260903-1')
-const { mapOnshapeToDesign } = await import('../../web/onshape-adapter.js?v=20260903-1')
-const { evaluateCncManufacturability } = await import('../../web/cnc-rules.js?v=20260903-1')
-const { revisionPrecondition } = await import('../../web/workflow-rules.js?v=20260903-1')
+const client = await import('../../web/onshape-client.js?v=20260903-2')
+const state = await import('../../web/state.js?v=20260903-2')
+const { mapOnshapeToDesign } = await import('../../web/onshape-adapter.js?v=20260903-2')
+const { evaluateCncManufacturability } = await import('../../web/cnc-rules.js?v=20260903-2')
+const { revisionPrecondition } = await import('../../web/workflow-rules.js?v=20260903-2')
 
 function source(overrides = {}) {
   return {
@@ -64,12 +64,16 @@ test('full microversion and element identity cannot collide under short labels',
 
 test('live source never inherits fixture material; findings retain measured provenance', () => {
   const mapped = mapOnshapeToDesign(source(), config, domain.design)
-  assert.equal(mapped.design.material.id, 'unknown')
+  assert.equal(mapped.design.material.id, 'unspecified')
+  assert.equal(mapped.design.material.reviewStatus, 'unknown')
+  assert.equal(mapped.design.process.reviewStatus, 'unknown')
+  assert.equal(mapped.design.quantity, null)
   const result = evaluateCncManufacturability(mapped.design)
   assert.equal(result.coverage.evaluatedRuleCount, 1)
   assert.equal(result.coverage.skippedRules.length, 4)
   assert.equal(result.findings[0].inputReviewStatus, 'inferred-unreviewed')
   assert.match(result.findings[0].evidenceReferences[0], /native-wall-variable/)
+  assert.equal(result.findings[0].evidenceReferences.some((reference) => reference.startsWith('fixture://')), false)
   assert.doesNotMatch(result.findings[0].consequence, /0\.8 mm/)
 })
 

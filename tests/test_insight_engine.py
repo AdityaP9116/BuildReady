@@ -36,7 +36,7 @@ def snapshot() -> dict[str, Any]:
         "featureId": "inside-pocket-corner", "calculation": "1.2 mm < 3.5 mm",
         "consequence": "The selected cutter cannot produce the corner.",
         "recommendation": "Increase the radius to 3.5 mm.",
-        "evidenceReferences": ["ruleset://cnc-demo-1.0.0/CNC-R001"],
+        "evidenceReferences": ["ruleset://cnc-dfm-1.1.0/CNC-R001"],
     }
     return {
         "design": {
@@ -100,7 +100,7 @@ class GroundedResponseTests(unittest.TestCase):
         answer = run_engine("engine.composeInsightResponse(payload.intent, payload.snapshot)", payload)
         self.assertIn("1 high", answer["text"])
         self.assertIn("1.2 mm < 3.5 mm", answer["text"])
-        self.assertEqual(answer["citations"][0]["reference"], "ruleset://cnc-demo-1.0.0/CNC-R001")
+        self.assertEqual(answer["citations"][0]["reference"], "ruleset://cnc-dfm-1.1.0/CNC-R001")
 
     def test_risk_summary_lists_every_current_finding(self) -> None:
         current = snapshot()
@@ -176,7 +176,7 @@ const sessionStorage = {
 }
 globalThis.window = { dispatchEvent() {}, addEventListener() {}, setTimeout, sessionStorage }
 const { createModelInsightAssistant } = await import('./web/insight-assistant.js')
-const { workflowState } = await import('./web/state.js?v=20260903-1')
+const { workflowState } = await import('./web/state.js?v=20260903-2')
 const assistant = createModelInsightAssistant(sessionStorage)
 const risk = await assistant.ask('What is the highest-risk issue?')
 const detail = await assistant.ask('Explain the thin wall specifically.')
