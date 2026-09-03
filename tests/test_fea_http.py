@@ -6,7 +6,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts import serve
 from scripts.fea_service import FeaService, FeaStore, ServicePaths
@@ -91,13 +91,51 @@ class FeaHttpTests(unittest.TestCase):
         self.assertNotIn("frame-ancestors 'none'", panel['Content-Security-Policy'])
         self.assertIn('frame-ancestors https://cad.onshape.com', panel['Content-Security-Policy'])
 
-    def test_idle_server_has_periodic_cleanup_without_requests(self) -> None:
-        with patch.object(self.service.store, 'cleanup_expired') as cleanup:
-            self.server._last_cleanup = 0
-            self.server.service_actions()
-            cleanup.assert_called_once()
-            self.server.service_actions()
-            cleanup.assert_called_once()
+
+class CleanupScheduleTests(unittest.TestCase):
+    def test_first_sweep_and_minute_boundary_do_not_depend_on_machine_uptime(self) -> None:
+        for initial in (0.0, 30.0, 600000.0):
+            with self.subTest(initial=initial):
+                # No listening socket/background thread can race these calls.
+                server = object.__new__(serve.LocalWorkspaceServer)
+                service = Mock()
+                service.clock.return_value = 1234
+                with patch.object(serve, 'local_fea_service', return_value=service), \
+                        patch.object(serve.time, 'monotonic', side_effect=[initial, initial, initial + 59.999, initial + 60]), \
+                        patch.dict(serve.os.environ, {}, clear=True):
+                    server.service_actions()
+                    service.store.cleanup_expired.assert_called_once_with(1234)
+                    server.service_actions()
+                    server.service_actions()
+                    service.store.cleanup_expired.assert_called_once()
+                    server.service_actions()
+                    self.assertEqual(service.store.cleanup_expired.call_count, 2)
+
+    def test_independent_server_instances_each_get_a_first_sweep(self) -> None:
+        service = Mock()
+        with patch.object(serve, 'local_fea_service', return_value=service), \
+                patch.object(serve.time, 'monotonic', return_value=0), \
+                patch.dict(serve.os.environ, {}, clear=True):
+            for _ in range(2):
+                object.__new__(serve.LocalWorkspaceServer).service_actions()
+        self.assertEqual(service.store.cleanup_expired.call_count, 2)
+
+    def test_idle_server_invokes_cleanup_without_an_http_request(self) -> None:
+        swept = threading.Event()
+        service = Mock()
+        service.store.cleanup_expired.side_effect = lambda *_: swept.set()
+        with patch.object(serve, 'local_fea_service', return_value=service), \
+                patch.dict(serve.os.environ, {}, clear=True):
+            server = serve.LocalWorkspaceServer(('127.0.0.1', 0), QuietHandler)
+            thread = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True)
+            thread.start()
+            try:
+                self.assertTrue(swept.wait(timeout=3), 'Idle event loop did not invoke cleanup')
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=3)
+            service.store.cleanup_expired.assert_called_once()
 
 
 if __name__ == '__main__':

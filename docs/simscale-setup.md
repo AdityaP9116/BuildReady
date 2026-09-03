@@ -1,12 +1,15 @@
 # SimScale read-only preflight
 
+For the prepared local configuration and the five Onshape fields to fill next, use [Local integration setup](local-integration-setup.md). The user requires **$0 spending** and has approved only a public, non-confidential demonstration part. Earlier private-project prerequisites are not permission to purchase a plan or upload confidential CAD to Community projects. Account reads do not authorize compute.
+
 Live SimScale work remains disabled until the account, manual template, CAD import, and numerical verification gates pass. The repository currently provides a safe preflight plus the fully labeled recorded workflow; it does not claim a verified live run.
 
 Current implementation status:
 
 - Recorded provider: complete for the human-gated orchestration demo.
 - Read-only account probe: implemented in `scripts/simscale_probe.py`.
-- Exact-microversion Onshape STEP client: implemented and mock-verified in `scripts/onshape_export.py`.
+- Exact-project read: `uv run python scripts/simscale_probe.py --project` validates `SIMSCALE_PROJECT_ID` against the returned ID and reports the measurement system without printing keys, IDs or project text. It does not establish project visibility, write access or free compute entitlement.
+- Version-bound Onshape STEP client: implemented and mock-tested in `scripts/onshape_export.py`, requiring an approved version-to-microversion match, one part and the default configuration. Real-account export provenance is not yet verified.
 - SimScale storage, presigned upload, CAD import, topology, and saved-selection client: implemented and mock-verified in `scripts/simscale_transport.py`.
 - Live SimScale provider: deliberately disconnected until every verification item below passes.
 
@@ -14,9 +17,9 @@ The two transport clients establish the security and API boundary only; they are
 
 ## 1. Confirm account capability
 
-In SimScale, confirm that the target project allows API access and that the account has enough compute allowance for the planned verification runs. Create an API key from the account API Keys screen. SimScale documents that the v1 API uses the `X-API-KEY` header and that project API access is an explicit setting.
+In SimScale, confirm API access and the account's remaining free allowance. Do not upgrade or run simulations during setup. Create an API key from the account API Keys screen. The v1 API authenticates with the `X-API-KEY` header. Keep any key previously shared in chat revoked.
 
-Copy `.env.example` to `.env`, add the key locally, and never commit `.env`:
+If `.env` does not exist, copy `.env.example` to `.env`. Otherwise preserve its existing settings. Add the key locally and never commit `.env`:
 
 ```dotenv
 SIMSCALE_API_KEY=your-key

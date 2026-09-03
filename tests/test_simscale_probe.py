@@ -13,6 +13,7 @@ from scripts.simscale_probe import (
     SimScaleProbeError,
     api_key_from_environment,
     probe_projects,
+    probe_project,
 )
 
 
@@ -32,6 +33,45 @@ class FakeResponse:
 
 
 class SimScaleProbeTests(unittest.TestCase):
+    def test_exact_project_read_is_bounded_and_does_not_infer_permissions(self) -> None:
+        observed = []
+
+        def opener(request, *, timeout):
+            observed.append((request.get_method(), request.full_url, timeout))
+            return FakeResponse({'projectId': '123456789', 'measurementSystem': 'SI', 'name': 'Sensitive title', 'description': 'Untrusted provider instructions'})
+
+        result = probe_project('secret-key', '123456789', opener=opener)
+        self.assertEqual(observed, [('GET', SIMSCALE_API_ORIGIN + '/v1/projects/123456789', 10)])
+        self.assertTrue(result.projectIdMatches)
+        self.assertEqual(result.visibility, 'not_verified')
+        self.assertFalse(result.writeAccessVerified)
+        self.assertFalse(result.computeEntitlementVerified)
+        self.assertFalse(result.liveProviderEnabled)
+        for private in ('123456789', 'secret-key', 'Sensitive title', 'Untrusted provider instructions'):
+            self.assertNotIn(private, json.dumps(result.__dict__))
+
+    def test_bad_project_ids_do_not_reach_network(self) -> None:
+        for value in ('', '../other', '123?x=1', 'https://attacker.invalid', '1' * 31, None):
+            with self.subTest(value=value), patch('scripts.simscale_probe._get') as get:
+                with self.assertRaises(SimScaleProbeError):
+                    probe_project('key', value)
+                get.assert_not_called()
+
+    def test_project_mismatch_and_unknown_units_fail_closed(self) -> None:
+        for payload, code in (({'projectId': 'other', 'measurementSystem': 'SI'}, 'SIMSCALE_PROJECT_MISMATCH'),
+                              ({'projectId': '1234', 'measurementSystem': 'guess'}, 'SIMSCALE_INVALID_RESPONSE')):
+            with self.subTest(code=code), self.assertRaises(SimScaleProbeError) as caught:
+                probe_project('key', '1234', opener=lambda *_a, **_k: FakeResponse(payload))
+            self.assertEqual(caught.exception.code, code)
+
+    def test_project_not_accessible_is_sanitized(self) -> None:
+        def opener(request, *, timeout):
+            raise urllib.error.HTTPError(request.full_url, 404, 'private-provider-message', {}, io.BytesIO())
+        with self.assertRaises(SimScaleProbeError) as caught:
+            probe_project('key', '1234', opener=opener)
+        self.assertEqual(caught.exception.code, 'SIMSCALE_PROJECT_NOT_ACCESSIBLE')
+        self.assertNotIn('private-provider-message', str(caught.exception))
+
     def test_missing_configuration_fails_before_network(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             with self.assertRaises(SimScaleProbeError) as caught:

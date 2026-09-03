@@ -22,6 +22,8 @@ This plan expands [07 — Real, Traceable Supplier Quotes](./07-datumflow-real-t
 
 ## 0. Priority decision and reviewable delivery sequence
 
+**2026-09-03 preparation update:** the user approved a public, non-confidential demonstration part on the free account. That supersedes the private-project prerequisite only for that bounded demo, not real/customer CAD or supplier documents. The configured SimScale project has now passed an authenticated exact-ID read and returned SI units; visibility, write/compute entitlement and numerical correctness remain unverified. Onshape inputs remain empty locally. See [local setup](../docs/local-integration-setup.md). The cleanup scheduler now uses an explicit first-run sentinel with controlled-clock and idle-event-loop regression tests; this is a CI repair, not completion of a live FEA gate.
+
 The user has set two outcomes above interface expansion: **a fully working, numerically verified SimScale integration** and **proper, traceable real supplier quotations**. SimScale is the main engineering delivery track. Real quote acquisition starts early because supplier turnaround is external; it does not wait for solver completion or access to a supplier API.
 
 | Order | Deliverable | Completion evidence |

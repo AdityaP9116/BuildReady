@@ -56,6 +56,8 @@ cnc-domain.json + supplier-fixtures.json
 
 ## Local development
 
+Connecting accounts? Follow [Local Onshape and SimScale setup](docs/local-integration-setup.md). It preserves existing local keys, provides offline readiness checks and supports a read-only check of the exact SimScale project; no uploads or compute are started.
+
 Prerequisites:
 
 - `uv` 0.12 or later

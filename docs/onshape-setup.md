@@ -146,8 +146,10 @@ ONSHAPE_WORKSPACE_ID=…
 ONSHAPE_ELEMENT_ID=…
 ```
 
-Then run `uv run --env-file .env python scripts/serve.py` and load the live
-model from `/design`. `uv` does not load `.env` unless `--env-file` is supplied.
+Then run `uv run python scripts/serve.py` and load the live model from `/design`.
+The server explicitly reads `.env`; an already running server needs a restart.
+For secret-safe readiness checks and URL-to-ID extraction, see
+[Local integration setup](local-integration-setup.md).
 
 When the local server is exposed through an HTTPS tunnel for an embedded-panel
 test, explicitly allow that exact origin before starting it:

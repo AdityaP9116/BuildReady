@@ -612,11 +612,13 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
 class LocalWorkspaceServer(ThreadingHTTPServer):
     """Enforce seven-day local FEA artifact expiry even without browser traffic."""
 
-    _last_cleanup = 0.0
+    # A monotonic clock has no guaranteed starting value. None means that this
+    # server has not swept yet, even when the machine has just booted.
+    _last_cleanup: float | None = None
 
     def service_actions(self) -> None:
         now = time.monotonic()
-        if now - self._last_cleanup < 60:
+        if self._last_cleanup is not None and now - self._last_cleanup < 60:
             return
         self._last_cleanup = now
         try:

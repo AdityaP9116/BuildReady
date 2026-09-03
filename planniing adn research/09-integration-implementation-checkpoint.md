@@ -4,6 +4,8 @@ Scope: local implementation checkpoint of document 08, prepared for the user's r
 
 ## Latest checkpoint: private quotations and provider foundations
 
+**2026-09-03 setup follow-up:** repaired the CI cleanup timing assumption using an explicit first-sweep sentinel, controlled-clock boundary tests and an independent idle-server check. Local validation now passes 163 Python tests, 17 JavaScript tests and a 33-file build. A real, bounded, read-only request confirmed access to the user's exact configured SimScale project and SI units; it does not prove visibility, write/compute permissions or numerical correctness. The user has approved a public non-confidential demo only. No geometry or simulation job was sent. Added secret-safe offline/explicit-read preflight commands and the [Onshape handoff guide](../docs/local-integration-setup.md). The five Onshape fields are present but empty locally; existing SimScale configuration is preserved. No FEA completion gate is closed by this account check.
+
 This section supersedes the initial-slice status below. The user has set a **$0 spending constraint**: no paid simulations, hosting, subscriptions, quotation fees, purchases or orders. Live provider actions require confirmed no-charge access as well as their separate approval and verification gates. No paid run or supplier handoff was initiated during this work.
 
 ### Available code
