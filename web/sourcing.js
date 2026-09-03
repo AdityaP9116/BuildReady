@@ -6,7 +6,7 @@ let selectedRequest = null
 let approval = null
 let lastReport = null
 const chargeNames = ['setup', 'finish', 'inspection', 'packaging', 'shipping', 'tax', 'other']
-const quoteFields = ['supplier', 'quoteReference', 'issuedAt', 'quantity', 'currency', 'offerType', 'unitPrice', 'scopeMatch', 'validUntil', 'leadTime', ...chargeNames.map(name => `charges.${name}`)]
+const quoteFields = ['supplier', 'quoteReference', 'issuedAt', 'quantity', 'currency', 'offerType', 'unitPrice', 'statedTotal', 'scopeMatch', 'validUntil', 'leadTime', ...chargeNames.map(name => `charges.${name}`)]
 const registered = []
 
 function output(value) { $('#output').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
@@ -31,7 +31,7 @@ for (const [name, label, type] of [
   ['grade', 'Material grade/specification'], ['condition', 'Material temper/condition'], ['substitutions', 'Permitted substitutions, or “none”'], ['process', 'Manufacturing process'], ['quantity', 'Requested quantity', 'number'], ['tolerances', 'Drawing and tolerance requirements'], ['finish', 'Finish, or “none required”'], ['inspection', 'Inspection/certification requirements'], ['country', 'Delivery country'], ['region', 'Delivery region'], ['shippingBasis', 'Shipping/delivery basis'], ['targetDate', 'Target date (optional)', 'date'], ['exceptions', 'Exceptions, or “none”'],
 ]) field($('#rfq-fields'), name, label, type)
 for (const [name, label, type] of [
-  ['supplierIdentity', 'Stable supplier identity'], ['supplierName', 'Supplier legal/display name'], ['quoteReference', 'Supplier quote and line reference'], ['issuedAt', 'Issue date', 'date'], ['validUntil', 'Valid through (unknown if blank)', 'date'], ['quantity', 'Quoted quantity', 'number'], ['currency', 'Currency code (USD pricing policy initially)'], ['unitPrice', 'Unit price, as a decimal (unknown if blank)'], ['leadTime', 'Lead time and its starting point (unknown if blank)'],
+  ['supplierIdentity', 'Stable supplier identity'], ['supplierName', 'Supplier legal/display name'], ['quoteReference', 'Supplier quote and line reference'], ['issuedAt', 'Issue date', 'date'], ['validUntil', 'Valid through (unknown if blank)', 'date'], ['quantity', 'Quoted quantity', 'number'], ['currency', 'Currency code (USD pricing policy initially)'], ['unitPrice', 'Unit price, as a decimal (unknown if blank)'], ['statedTotal', 'Order total exactly as the source states it (unknown if blank)'], ['leadTime', 'Lead time and its starting point (unknown if blank)'],
 ]) field($('#quote-fields'), name, label, type)
 for (const name of chargeNames) {
   const row = document.createElement('div'); row.className = 'sourcing-grid'
@@ -169,7 +169,7 @@ bind('#quote-form', 'submit', async () => {
     supplier: { identity: v.supplierIdentity, name: v.supplierName, independenceAttested: v.independence === 'on' },
     quoteReference: v.quoteReference, issuedAt: v.issuedAt, validUntil: v.validUntil || null, offerType: v.offerType, scopeMatch: v.scopeMatch,
     deviations: v.deviations.split('\n').map(item => item.trim()).filter(Boolean), quantity: Number(v.quantity), currency: v.currency,
-    unitPrice: v.unitPrice || null, charges, leadTime: v.leadTime || null, citations, quoteId: null, expectedVersion: null,
+    unitPrice: v.unitPrice || null, statedTotal: v.statedTotal || null, charges, leadTime: v.leadTime || null, citations, quoteId: null, expectedVersion: null,
   } })
   invalidateApproval(); await refresh(); output(record)
 })

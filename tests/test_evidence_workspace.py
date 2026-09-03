@@ -57,12 +57,12 @@ class EvidenceWorkspaceTests(unittest.TestCase):
         charges['setup'] = {**charge, 'state': 'quoted_separately', 'amount': '80.00'}
         charges['shipping'] = {**charge, 'state': 'unknown'}
         charges['tax'] = {**charge, 'state': 'excluded'}
-        fields = ['supplier', 'quoteReference', 'issuedAt', 'quantity', 'currency', 'offerType', 'unitPrice', 'scopeMatch', 'validUntil', 'leadTime'] + ['charges.' + key for key in CHARGES]
+        fields = ['supplier', 'quoteReference', 'issuedAt', 'quantity', 'currency', 'offerType', 'unitPrice', 'statedTotal', 'scopeMatch', 'validUntil', 'leadTime'] + ['charges.' + key for key in CHARGES]
         return {'requestId': rfq['id'], 'requestVersion': rfq['version'], 'artifactId': artifact['id'],
                 'supplier': {'identity': name, 'name': name, 'independenceAttested': True},
                 'quoteReference': 'SYNTHETIC-ONLY', 'issuedAt': '2026-09-01', 'validUntil': '2027-12-31',
                 'offerType': 'supplier_quote', 'scopeMatch': 'supplier_confirmed', 'deviations': [],
-                'quantity': 10, 'currency': 'USD', 'unitPrice': '42.50', 'charges': charges,
+                'quantity': 10, 'currency': 'USD', 'unitPrice': '42.50', 'statedTotal': '505.00', 'charges': charges,
                 'leadTime': '10 business days from order approval',
                 'citations': {key: {'artifactId': artifact['id'], 'locator': 'synthetic test page 1', 'rawValue': 'fictional test terms'} for key in fields},
                 'quoteId': None, 'expectedVersion': None}
@@ -180,6 +180,61 @@ class EvidenceWorkspaceTests(unittest.TestCase):
         self.assertEqual(digest(SOURCE), draft['content']['designSourceHash'])
         with self.assertRaises(EvidenceError):
             self.request_draft(source={**SOURCE, 'microversionId': 'unknown'})
+
+    def complete_quote(self, rfq, name='supplier-a', **changes):
+        payload = self.quote_payload(rfq, name)
+        for key in ['shipping', 'tax']:
+            payload['charges'][key]['state'] = 'explicit_zero'
+        payload.update(changes)
+        return payload
+
+    def test_supplier_stated_total_must_reconcile_with_the_quoted_terms(self):
+        rfq = self.frozen()
+        matching = self.compare(rfq, [self.reviewed(self.complete_quote(rfq))])['offers'][0]
+        self.assertEqual('matches_source', matching['totalReconciliation'])
+        self.assertEqual('505.00', matching['computedTotal'])
+        self.assertEqual([], matching['blockingReasons'])
+
+        contradicting = self.compare(rfq, [self.reviewed(
+            self.complete_quote(rfq, 'supplier-b', statedTotal='999.00'))])['offers'][0]
+        self.assertEqual('contradicts_source', contradicting['totalReconciliation'])
+        self.assertIn('supplier_total_mismatch', contradicting['blockingReasons'])
+        self.assertEqual('999', contradicting['statedTotal'], 'the source value is stored exactly, not re-rounded')
+        self.assertEqual('505.00', contradicting['computedTotal'])
+
+    def test_absent_stated_total_is_unknown_rather_than_assumed_correct(self):
+        rfq = self.frozen()
+        payload = self.complete_quote(rfq, statedTotal=None)
+        del payload['citations']['statedTotal']
+        offer = self.compare(rfq, [self.reviewed(payload)])['offers'][0]
+        self.assertEqual('not_stated', offer['totalReconciliation'])
+        self.assertIn('statedTotal', offer['missingFields'])
+        self.assertEqual('505.00', offer['landedCostTotal'])
+
+    def test_a_corrected_quote_retires_the_version_it_replaced(self):
+        rfq = self.frozen()
+        superseded = self.reviewed(self.complete_quote(rfq))
+        self.assertEqual('eligible', self.compare(rfq, [superseded, self.reviewed(
+            self.complete_quote(rfq, 'supplier-b'))])['outcome'])
+
+        correction = self.complete_quote(rfq, quoteId=superseded['id'],
+                                         expectedVersion=superseded['version'], unitPrice='44.00',
+                                         statedTotal='520.00')
+        self.reviewed(correction)
+        stale = self.compare(rfq, [superseded])['offers'][0]
+        self.assertIn('superseded_by_newer_version', stale['blockingReasons'])
+        self.assertIsNone(self.compare(rfq, [superseded])['ranking'])
+
+    def test_ranking_uses_exact_decimals_not_rounded_display_values(self):
+        rfq = self.frozen()
+        cheaper = self.reviewed(self.complete_quote(rfq, 'supplier-a', unitPrice='42.5001',
+                                                    statedTotal='505.001'))
+        dearer = self.reviewed(self.complete_quote(rfq, 'supplier-b', unitPrice='42.5002',
+                                                   statedTotal='505.002'))
+        result = self.compare(rfq, [dearer, cheaper])
+        self.assertEqual('eligible', result['outcome'])
+        self.assertEqual([cheaper['id'], dearer['id']], result['ranking'])
+        self.assertEqual('505.00', result['offers'][0]['landedCostTotal'])
 
     def test_atomic_duplicate_freeze_has_one_winner(self):
         draft, _ = self.request_draft()

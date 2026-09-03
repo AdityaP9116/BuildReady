@@ -133,7 +133,7 @@ class SourcingService:
             return self.store.save_record(db, principal, workspace, 'rfq', current['content'], identity=identity, expected=version, state='frozen')
 
     def quote_draft(self, principal: Principal, workspace: str, payload: dict) -> dict:
-        exact(payload, {'requestId', 'requestVersion', 'artifactId', 'supplier', 'quoteReference', 'issuedAt', 'validUntil', 'offerType', 'scopeMatch', 'deviations', 'quantity', 'currency', 'unitPrice', 'charges', 'leadTime', 'citations', 'quoteId', 'expectedVersion'})
+        exact(payload, {'requestId', 'requestVersion', 'artifactId', 'supplier', 'quoteReference', 'issuedAt', 'validUntil', 'offerType', 'scopeMatch', 'deviations', 'quantity', 'currency', 'unitPrice', 'statedTotal', 'charges', 'leadTime', 'citations', 'quoteId', 'expectedVersion'})
         rfq = self.store.get_record(principal, workspace, payload['requestId'], version=payload['requestVersion'])
         if rfq['kind'] != 'rfq' or rfq['state'] != 'frozen':
             raise EvidenceError('FROZEN_REQUEST_REQUIRED', 'Select an exact frozen request version.')
@@ -180,7 +180,7 @@ class SourcingService:
         if not isinstance(deviations, list) or len(deviations) > 20:
             raise EvidenceError('INVALID_DEVIATIONS', 'Provide an explicit bounded deviation list.')
         normalized = {
-            'schemaVersion': 'supplier-quote-1.0', 'sourceKind': 'supplier_document_upload',
+            'schemaVersion': 'supplier-quote-1.1', 'sourceKind': 'supplier_document_upload',
             'artifactId': artifact['id'], 'sourceDigest': artifact['digest'],
             'requestId': rfq['id'], 'requestVersion': rfq['version'], 'requestHash': rfq['content']['requestHash'],
             'supplier': supplier, 'quoteReference': text_field(payload['quoteReference'], 'Quote reference', 120),
@@ -189,6 +189,7 @@ class SourcingService:
             'deviations': [text_field(item, 'Deviation', 300) for item in deviations],
             'quantity': payload['quantity'], 'currency': payload['currency'],
             'unitPrice': decimal_amount(payload['unitPrice']) if payload['unitPrice'] is not None else None,
+            'statedTotal': decimal_amount(payload['statedTotal']) if payload['statedTotal'] is not None else None,
             'charges': charges, 'leadTime': text_field(payload['leadTime'], 'Lead-time basis', 300) if payload['leadTime'] is not None else None,
             'citations': citations, 'reviewStatus': 'pending',
         }
@@ -206,6 +207,8 @@ class SourcingService:
             required.add('scopeMatch')
         if quote['unitPrice'] is not None:
             required.add('unitPrice')
+        if quote.get('statedTotal') is not None:
+            required.add('statedTotal')
         if quote['validUntil'] is not None:
             required.add('validUntil')
         if quote['leadTime'] is not None:
@@ -232,7 +235,7 @@ class SourcingService:
             raise EvidenceError('RFQ_MISMATCH', 'Comparison needs the exact frozen request hash and version.', 409)
         if not isinstance(payload['offers'], list) or not 0 <= len(payload['offers']) <= 20:
             raise EvidenceError('INVALID_OFFERS', 'Select at most 20 exact quote versions.')
-        seen, offers = set(), []
+        seen, offers, exact_totals = set(), [], {}
         today = datetime.fromtimestamp(self.store.clock(), timezone.utc).date().isoformat()
         for item in payload['offers']:
             exact(item, {'id', 'version'})
@@ -242,6 +245,7 @@ class SourcingService:
             record = self.store.get_record(principal, workspace, item['id'], version=item['version'])
             if record['kind'] != 'quote':
                 raise EvidenceError('QUOTE_REQUIRED', 'Every selected offer must be a quote.')
+            latest = self.store.get_record(principal, workspace, item['id'])
             quote = record['content']
             blockers, caveats, missing = [], [], []
             try:
@@ -254,6 +258,8 @@ class SourcingService:
                 blockers.append('original_evidence_unavailable')
             if record['state'] != 'reviewed':
                 blockers.append('review_pending')
+            if record['version'] != latest['version']:
+                blockers.append('superseded_by_newer_version')
             if quote['requestHash'] != payload['requestHash'] or quote['quantity'] != rfq['content']['requirements']['quantity']:
                 blockers.append('different_request_or_quantity')
             if quote['scopeMatch'] == 'unresolved' or quote['deviations'] or rfq['content']['scopeIncomplete']:
@@ -285,12 +291,22 @@ class SourcingService:
                 elif charge['state'] == 'quoted_separately':
                     total += Decimal(charge['amount']) * (quote['quantity'] if charge['basis'] == 'per_unit' else 1)
             complete_costs = not any(field == 'unitPrice' or field.startswith('charges.') for field in missing)
+            stated = quote.get('statedTotal')
+            if stated is None:
+                missing.append('statedTotal')
+            elif complete_costs and Decimal(stated) != total:
+                blockers.append('supplier_total_mismatch')
+            exact_totals[record['id']] = total
             offers.append({
                 'id': record['id'], 'version': record['version'], 'contentHash': record['contentHash'],
                 'sourceKind': quote['sourceKind'], 'supplier': quote['supplier'], 'reviewStatus': quote['reviewStatus'],
                 'designMatch': quote['scopeMatch'], 'validity': validity, 'evidenceAvailability': available,
                 'currency': quote['currency'], 'knownCostTotal': money_display(total),
                 'landedCostTotal': money_display(total) if complete_costs else None,
+                'statedTotal': stated, 'computedTotal': money_display(total),
+                'totalReconciliation': 'not_stated' if stated is None else (
+                    'not_reconcilable' if not complete_costs else (
+                        'matches_source' if Decimal(stated) == total else 'contradicts_source')),
                 'missingFields': missing, 'blockingReasons': blockers, 'caveats': caveats,
                 'charges': quote['charges'], 'leadTime': quote['leadTime'],
             })
@@ -302,11 +318,11 @@ class SourcingService:
         blocked = any(item['blockingReasons'] for item in offers)
         eligible = independent and not blocked and all(not item['missingFields'] and not item['caveats'] for item in offers)
         content = {
-            'schemaVersion': 'quote-comparison-1.0', 'policyVersion': 'usd-half-up-complete-landed-1.0',
+            'schemaVersion': 'quote-comparison-1.1', 'policyVersion': 'usd-half-up-complete-landed-reconciled-1.1',
             'requestId': rfq['id'], 'requestVersion': rfq['version'], 'requestHash': payload['requestHash'],
             'evaluatedAt': datetime.fromtimestamp(self.store.clock(), timezone.utc).isoformat(),
             'outcome': 'eligible' if eligible else ('blocked' if blocked else 'conditional'),
-            'ranking': [item['id'] for item in sorted(offers, key=lambda item: Decimal(item['landedCostTotal']))] if eligible else None,
+            'ranking': [item['id'] for item in sorted(offers, key=lambda item: exact_totals[item['id']])] if eligible else None,
             'independentOfferCountConfirmed': len(offers) if independent and all(item['supplier']['independenceAttested'] for item in offers) else 0,
             'offers': offers, 'engineeringReadiness': {'status': 'not_evaluated', 'manufacturingRelease': False},
             'note': 'One offer is a sourcing assessment, not a comparison. No purchase or supplier selection is performed.',
