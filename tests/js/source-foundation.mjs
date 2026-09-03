@@ -32,7 +32,7 @@ const { revisionPrecondition } = await import('../../web/workflow-rules.js?v=202
 const { composeInsightResponse, classifyInsightQuery } = await import('../../web/insight-engine.js?v=20260903-2')
 const { validateReviewReadiness } = await import('../../web/review-package.js?v=20260903-2')
 const { fictionalQuotePreview } = await import('../../web/quote-engine.js?v=20260903-2')
-const { reviewManufacturingInputs, REVIEW_GROUPS } = await import('../../web/manufacturing-review.js?v=20260903-2')
+const { reviewManufacturingInputs, persistManufacturingReview, restoreManufacturingReview, REVIEW_GROUPS } = await import('../../web/manufacturing-review.js?v=20260903-3')
 
 test('human measurement review is revision-bound, clears old evidence and never grants production approval', async () => {
   const mapped = mapOnshapeToDesign(source(), config, domain.design)
@@ -55,6 +55,22 @@ test('human measurement review is revision-bound, clears old evidence and never 
   state.workflowState.sourceFreshness = 'changed'
   assert.throws(() => state.applyReviewedManufacturingDesign(reviewed))
   state.restoreControlledFixture()
+})
+
+test('human measurement reviews persist and restore only for their exact snapshot', async () => {
+  const mapped = mapOnshapeToDesign(source(), config, domain.design)
+  const input = {snapshotKey:mapped.design.sourceSnapshotKey, reviewer:'Test reviewer', acknowledged:true,
+    groups:[{featureId:'thin-wall',reference:'Face A',dimensions:{thicknessMm:2.5}}]}
+  payload = {ok:true,record:{review:input,reviewHash:'sha256-storage',expiresAt:1800604800}}
+  const saved = await persistManufacturingReview(input)
+  assert.equal(saved.reviewHash,'sha256-storage')
+  assert.equal(calls.at(-1).pathname,'/api/manufacturing-reviews')
+  payload = {ok:true,found:true,record:saved}
+  const restored = await restoreManufacturingReview(mapped.design)
+  assert.equal(restored.sourceSnapshotKey,mapped.design.sourceSnapshotKey)
+  assert.equal(restored.manufacturingReview.storageHash,'sha256-storage')
+  assert.equal(restored.manufacturingReview.productionApproved,false)
+  assert.equal(calls.at(-1).searchParams.get('snapshotKey'),mapped.design.sourceSnapshotKey)
 })
 
 function source(overrides = {}) {

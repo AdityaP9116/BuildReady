@@ -8,6 +8,10 @@ The recorded demonstration and operator-assisted SimScale lane now use the `buil
 
 Raw SimScale CSV files remain in private seven-day storage and are never placed in browser state or Git. After preparation expiry, the immutable metadata remains available as an audit record while the retrieval view reports `EXPIRED` and `artifactsAvailable: false`. Column review and engineering verification are deliberately separate: real provider data starts at `engineeringVerification: pending`, so this checkpoint does not claim numerical correctness, convergence, a passed design or live-demo completion. The CLI can retrieve retained evidence without requiring expired CAD bytes, and its status reports the evidence count. No provider call was made for this checkpoint.
 
+## 2026-09-03 continuation: durable manufacturing review (coding gate 2)
+
+Human-entered final-solid measurements now pass through an independently validated, same-origin local API and a private SQLite record. Each record is bound to the full Onshape source snapshot key, content-fingerprinted, immutable for that snapshot and retained for seven days. The browser restores only an exact current-revision match after Onshape loading; a new revision cannot inherit an old review. Invalid, partial, non-finite or unacknowledged measurements fail closed, and a conflicting overwrite requires explicit reconciliation rather than silent replacement. Restored records remain labeled human-entered and `productionApproved: false`; saving or restoring clears dependent inspection, decision, simulation, quotation and package state through the existing source replacement path.
+
 ## Latest checkpoint: private quotations and provider foundations
 
 ### Operator implementation push — 2026-09-03

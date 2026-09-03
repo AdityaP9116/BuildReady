@@ -22,10 +22,12 @@ try:
     from scripts.fea_service import FeaService, FeaServiceError, error_payload
     from scripts.evidence_api import dispatch as dispatch_evidence, local_store as local_evidence_store
     from scripts.live_demo_preparation import cleanup_default_preparations
+    from scripts.manufacturing_review_store import ManufacturingReviewStore
 except ModuleNotFoundError:  # Direct `python scripts/serve.py` execution.
     from fea_service import FeaService, FeaServiceError, error_payload
     from evidence_api import dispatch as dispatch_evidence, local_store as local_evidence_store
     from live_demo_preparation import cleanup_default_preparations
+    from manufacturing_review_store import ManufacturingReviewStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +47,7 @@ FEA_CAPABILITIES_ENDPOINT = "/api/fea/capabilities"
 FEA_STUDIES_ENDPOINT = "/api/fea/studies"
 FEA_PREPARE_ENDPOINT = "/api/fea/prepare"
 FEA_CURRENT_SNAPSHOT_ENDPOINT = "/api/fea/current-snapshot"
+MANUFACTURING_REVIEWS_ENDPOINT = "/api/manufacturing-reviews"
 FEA_STUDY_PATTERN = re.compile(
     r"^/api/fea/studies/(?P<study_id>study-[a-f0-9]{16})(?:/(?P<action>approve-and-submit|status|results))?$"
 )
@@ -73,6 +76,8 @@ _inflight: dict[str, threading.Event] = {}
 _cache_lock = threading.Lock()
 _fea_service: FeaService | None = None
 _fea_service_lock = threading.Lock()
+_manufacturing_review_store: ManufacturingReviewStore | None = None
+_manufacturing_review_lock = threading.Lock()
 
 
 def local_fea_service() -> FeaService:
@@ -81,6 +86,14 @@ def local_fea_service() -> FeaService:
         if _fea_service is None:
             _fea_service = FeaService.from_environment()
         return _fea_service
+
+
+def local_manufacturing_review_store() -> ManufacturingReviewStore:
+    global _manufacturing_review_store
+    with _manufacturing_review_lock:
+        if _manufacturing_review_store is None:
+            _manufacturing_review_store = ManufacturingReviewStore()
+        return _manufacturing_review_store
 
 
 def load_dotenv() -> None:
@@ -512,6 +525,17 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(*error_payload(error))
             return
 
+        if request_path == MANUFACTURING_REVIEWS_ENDPOINT:
+            try:
+                query = parse_qs(urlsplit(self.path).query)
+                if set(query) != {'snapshotKey'} or len(query['snapshotKey']) != 1:
+                    raise ValueError('A single snapshotKey is required.')
+                result = local_manufacturing_review_store().get(query['snapshotKey'][0])
+                self.send_json(200, {'ok': True, 'found': result is not None, 'record': result})
+            except (ValueError, sqlite3.Error):
+                self.send_json(422, {'ok': False, 'error': {'code': 'MANUFACTURING_REVIEW_INVALID', 'message': 'The revision-bound manufacturing review request is invalid.'}})
+            return
+
         fea_match = FEA_STUDY_PATTERN.fullmatch(request_path)
         if fea_match:
             try:
@@ -542,11 +566,20 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
         request_path = urlsplit(self.path).path
         if dispatch_evidence(self, 'POST', request_path):
             return
+
         try:
             self.validate_local_api_request()
             if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
                 raise FeaServiceError('FEA_INVALID_REQUEST', 'API writes require application/json.', 415)
             payload = self.read_json()
+            if request_path == MANUFACTURING_REVIEWS_ENDPOINT:
+                try:
+                    response = local_manufacturing_review_store().put(payload)
+                    self.send_json(201, {'ok': True, 'record': response})
+                except ValueError as error:
+                    conflict = 'already has a different review' in str(error)
+                    raise FeaServiceError('MANUFACTURING_REVIEW_CONFLICT' if conflict else 'MANUFACTURING_REVIEW_INVALID', str(error), 409 if conflict else 422) from error
+                return
             if request_path in {FEA_STUDIES_ENDPOINT, FEA_PREPARE_ENDPOINT}:
                 service = local_fea_service()
                 response = service.prepare_study(payload) if request_path == FEA_PREPARE_ENDPOINT else service.create_study(payload)
@@ -659,6 +692,11 @@ class LocalWorkspaceServer(ThreadingHTTPServer):
             cleanup_default_preparations()
         except (OSError, ValueError, sqlite3.Error) as error:
             print(f"Private CAD cleanup requires attention ({type(error).__name__}).")
+        if _manufacturing_review_store is not None:
+            try:
+                _manufacturing_review_store.cleanup()
+            except (OSError, sqlite3.Error) as error:
+                print(f"Manufacturing review cleanup requires attention ({type(error).__name__}).")
 
 
 def main() -> None:

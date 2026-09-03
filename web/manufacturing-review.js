@@ -34,12 +34,34 @@ export async function reviewManufacturingInputs(design, input) {
     manufacturingInputGaps: (design.manufacturingInputGaps ?? []).filter(gap => !seen.has(gap.featureId)) }
 }
 
+async function reviewApi(url, options = {}) {
+  const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options })
+  const payload = await response.json()
+  if (!response.ok || payload.ok !== true) throw new Error(payload.error?.message ?? 'The private manufacturing review could not be saved.')
+  return payload
+}
+
+export async function persistManufacturingReview(input) {
+  const payload = await reviewApi('/api/manufacturing-reviews', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  })
+  return payload.record
+}
+
+export async function restoreManufacturingReview(design) {
+  if (!design.sourceIdentity) return null
+  const payload = await reviewApi(`/api/manufacturing-reviews?snapshotKey=${encodeURIComponent(design.sourceSnapshotKey)}`)
+  if (!payload.found) return null
+  const reviewed = await reviewManufacturingInputs(design, payload.record.review)
+  return { ...reviewed, manufacturingReview: { ...reviewed.manufacturingReview, storageHash: payload.record.reviewHash } }
+}
+
 export function mountManufacturingReview(container, design, save) {
   container.replaceChildren()
   if (!design.sourceIdentity) return
   const details = document.createElement('details')
   const summary = document.createElement('summary'); summary.textContent = 'Review measured manufacturing inputs'; details.append(summary)
-  const note = document.createElement('p'); note.textContent = 'Enter final-solid measurements in mm and a face/drawing reference. Leave unknown groups empty. This session-only review does not certify manufacturability or change CAD.'; details.append(note)
+  const note = document.createElement('p'); note.textContent = 'Enter final-solid measurements in mm and a face/drawing reference. Leave unknown groups empty. The private revision-bound review expires after seven days and does not certify manufacturability or change CAD.'; details.append(note)
   const form = document.createElement('form')
   function field(parent, name, label, type = 'text') {
     const wrapper = document.createElement('label'); wrapper.textContent = label
@@ -66,8 +88,10 @@ export function mountManufacturingReview(container, design, save) {
         if (!keys.some(key => data.get(`${id}.${key}`)) && !data.get(`${id}.reference`)) continue
         groups.push({ featureId: id, reference: data.get(`${id}.reference`), dimensions: Object.fromEntries(keys.map(key => [key, data.get(`${id}.${key}`) === '' ? null : Number(data.get(`${id}.${key}`))])) })
       }
-      await save(await reviewManufacturingInputs(design, { snapshotKey: design.sourceSnapshotKey, reviewer: reviewer.value, acknowledged: ack.checked, groups }))
-      message.textContent = 'Inputs applied. Run manufacturing checks again.'
+      const input = { snapshotKey: design.sourceSnapshotKey, reviewer: reviewer.value, acknowledged: ack.checked, groups }
+      const reviewed = await reviewManufacturingInputs(design, input)
+      await save(reviewed, input)
+      message.textContent = 'Inputs saved for this revision and applied. Run manufacturing checks again.'
     } catch (error) { message.textContent = error.message } finally { button.disabled = false }
   })
   details.append(form); container.append(details)
