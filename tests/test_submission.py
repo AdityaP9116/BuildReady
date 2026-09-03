@@ -47,6 +47,7 @@ class SubmissionPacketTests(unittest.TestCase):
         required = {
             "DEMO_SCRIPT.md",
             "DEMO_SCRIPT_ONSHAPE.md",
+            "RECORD_ONSHAPE_2MIN.md",
             "TESTING.md",
             "CHALLENGE_WORK.md",
             "ATTRIBUTION.md",
