@@ -81,6 +81,35 @@ class SourcingService:
     def __init__(self, store: EvidenceStore):
         self.store = store
 
+    def save_supplier(self, principal, workspace, payload):
+        """Private address book only; never supplier evidence or sharing consent."""
+        from urllib.parse import urlsplit
+        exact(payload, {'supplierId', 'expectedVersion', 'name', 'contact', 'website', 'active'})
+        if type(payload['active']) is not bool:
+            raise EvidenceError('INVALID_SUPPLIER', 'Active must be a boolean.')
+        if payload['supplierId'] is None:
+            if payload['expectedVersion'] is not None:
+                raise EvidenceError('INVALID_SUPPLIER', 'New entries cannot specify a version.')
+        else:
+            text_field(payload['supplierId'], 'Supplier ID', 100)
+        content = {'schemaVersion': 'preferred-supplier-1.0',
+                   'name': text_field(payload['name'], 'Supplier name', 200),
+                   'contact': text_field(payload['contact'], 'Contact', 400) if payload['contact'] else None,
+                   'website': text_field(payload['website'], 'Website', 400) if payload['website'] else None,
+                   'verified': False, 'sharingAuthorized': False}
+        if content['website']:
+            try:
+                url = urlsplit(content['website'])
+                valid = url.scheme == 'https' and bool(url.hostname) and not url.username and not url.password
+            except ValueError:
+                valid = False
+            if not valid:
+                raise EvidenceError('INVALID_SUPPLIER', 'Website must be an HTTPS URL without credentials.')
+        with self.store.connect(write=True) as db:
+            return self.store.save_record(db, principal, workspace, 'supplier', content,
+                identity=payload['supplierId'], expected=payload['expectedVersion'],
+                state='active' if payload['active'] else 'archived')
+
     def prepare_request(self, principal: Principal, workspace: str, payload: dict) -> dict:
         exact(payload, {'source', 'stepArtifactId', 'requirements', 'requestId', 'expectedVersion', 'idempotencyKey'})
         identity = source_identity(payload['source'])

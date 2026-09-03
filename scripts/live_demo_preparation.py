@@ -251,6 +251,10 @@ class PreparationStore:
                 db.execute('DELETE FROM illustrative_drafts WHERE preparation_id=?', (row['id'],))
                 if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_run_specs'").fetchone():
                     db.execute('DELETE FROM live_run_specs WHERE preparation_id=?', (row['id'],))
+                if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_topology_mappings'").fetchone():
+                    db.execute('DELETE FROM live_topology_mappings WHERE preparation_id=?', (row['id'],))
+                if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_run_bindings'").fetchone():
+                    db.execute('DELETE FROM live_run_bindings WHERE preparation_id=?', (row['id'],))
                 if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_result_files'").fetchone():
                     files = db.execute('SELECT result_id FROM live_result_files WHERE preparation_id=?', (row['id'],)).fetchall()
                     for item in files:

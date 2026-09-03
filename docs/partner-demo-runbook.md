@@ -94,7 +94,33 @@ Only confirm parity after checking it. Choose level 0 and **Advance this approve
 
 Cancellation accepts only recorded resources created by this preparation and remains available after CAD expiry. A cancellation request does not prove termination; check the actual provider status.
 
-**Timeout rule:** an uncertain external write is not automatically replayed. Inspect the local journal and the SimScale project. Automatic reconciliation of a lost creation receipt is not implemented; do not delete journal rows or re-export under a new identity to bypass this guard. Escalate the exact operation IDs for reconciliation.
+**Timeout rule:** an uncertain external write is never automatically replayed. Inspect the local journal and the SimScale project, then use **Verify and reconcile** with the exact stage and candidate IDs. Do not delete journal rows or re-export under a new identity to bypass this guard.
+
+### Recover a lost response without repeating the action
+
+Use the operation stage from **Read operation journal**. For example, a lost mesh-creation response uses:
+
+```json
+{
+  "stage": "mesh-create-0",
+  "reviewer": "YOUR_NAME",
+  "providerEvidenceReviewed": true,
+  "candidate": {"meshOperationId": "ACTUAL_PROVIDER_UUID"}
+}
+```
+
+The `candidate` fields depend on the stage:
+
+| Stage | Candidate fields |
+| --- | --- |
+| `import` | `storageId`, `cadId`, `cadStateId`, exact retained `stepSha256`, and `geometryParityChecked: true` |
+| `mesh-create-N` | `meshOperationId` |
+| `simulation-create-N` | `simulationId` |
+| `run-create-N` | `simulationId`, `runId` |
+| `mesh-start-N` / `run-start-N` | `targetId` matching the preceding recorded creation |
+| `cancel-UUID` | Empty object `{}`; the target comes from the retained cancellation request |
+
+Reconciliation uses provider GET requests, compares frozen specifications where available, and requires a terminal cancellation target or evidence that a start target left `READY`. It records an immutable reviewer/evidence digest and never repeats the original write. Import geometry and storage linkage are explicitly operator-attested, not proof from provider byte hashes. Legacy uncertain operations without retained request data remain blocked. After a recovered run-creation receipt, use the normal approved advance action to establish its specification/topology binding before capturing results.
 
 ## 6. Read actual results and verify them
 
@@ -120,7 +146,7 @@ Before claiming credible engineering results, complete the analytical benchmark,
 
 Show live Onshape source and measurement provenance; actual manufacturing findings or missing checks; the real SimScale run and unverified/verified evidence as appropriate; and **fictional** supplier comparison cards with unknown shipping/tax preserved. Do not portray recorded simulation values or sample prices as results for the real bracket.
 
-The embedded Onshape panel still needs signed-in hosted acceptance. Use the existing panel setup instructions; a localhost standalone demo does not prove hosted iframe integration. A reusable preferred-supplier directory, automatic face recognition, automatic lost-receipt reconciliation, and unified live-result WebMCP/review-package consumption remain follow-up implementation items.
+The embedded Onshape panel still needs signed-in hosted acceptance. Use the existing panel setup instructions; a localhost standalone demo does not prove hosted iframe integration. A reusable preferred-supplier directory, automatic face recognition, and unified live-result WebMCP/review-package consumption remain follow-up implementation items. Lost-receipt recovery is operator-assisted and must not be presented as unattended reconciliation.
 
 ## Contract reference
 

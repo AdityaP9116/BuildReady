@@ -2,6 +2,36 @@
 
 Scope: local implementation checkpoint of document 08, prepared for the user's requested GitHub push. Not a live SimScale, production-security, numerical-verification or genuine-quotation completion claim.
 
+## Further continuation: gates 6–7 read-side integration
+
+The latest [remaining-gates handoff](../docs/remaining-gates-handoff.md) records the preferred-supplier directory, local retention command, verification steps and all remaining coding/account acceptance gaps. It supersedes older progress statements below; not all gates are complete.
+
+The main Simulation page now loads authenticated retained live evidence for an explicitly selected part, checks the full active document/element/microversion and default configuration, and exposes it through `get_live_simulation_evidence`, active design context and JSON export. Expiry and source freshness are evaluated when the evidence is read. This is a separate live-evidence view: it does not populate the recorded-demo solver or grant production approval. Full combined commercial/engineering package integration remains open.
+
+A server-side numerical-readiness report calculates reaction balance and adjacent-mesh displacement changes only for three distinct, current, consistently bound live runs. Analytical benchmark, manual parity, reviewed-region stress and engineering review remain unknown until actual evidence is available. Global peak stress is not substituted for reviewed-region convergence. Gates 6 and 7 are therefore advanced, not fully accepted.
+
+## 2026-09-03 continuation: canonical simulation evidence (coding gate 1)
+
+The recorded demonstration and operator-assisted SimScale lane now use the `buildready-simulation-evidence-2.0.0` schema family. A captured live record binds the immutable Onshape document, version, microversion, element, part and default configuration to the retained STEP and geometry digests, reviewed setup digest, provider project/simulation/run identifiers, exact result-resource digests and normalized metrics. It receives stable evidence/result hashes and is written immutably to the private preparation database. Repeating the same capture is idempotent; attempting to bind the same run to different evidence stops for reconciliation.
+
+Raw SimScale CSV files remain in private seven-day storage and are never placed in browser state or Git. After preparation expiry, the immutable metadata remains available as an audit record while the retrieval view reports `EXPIRED` and `artifactsAvailable: false`. Column review and engineering verification are deliberately separate: real provider data starts at `engineeringVerification: pending`, so this checkpoint does not claim numerical correctness, convergence, a passed design or live-demo completion. The CLI can retrieve retained evidence without requiring expired CAD bytes, and its status reports the evidence count. No provider call was made for this checkpoint.
+
+## 2026-09-03 continuation: durable manufacturing review (coding gate 2)
+
+Human-entered final-solid measurements now pass through an independently validated, same-origin local API and a private SQLite record. Each record is bound to the full Onshape source snapshot key, content-fingerprinted, immutable for that snapshot and retained for seven days. The browser restores only an exact current-revision match after Onshape loading; a new revision cannot inherit an old review. Invalid, partial, non-finite or unacknowledged measurements fail closed, and a conflicting overwrite requires explicit reconciliation rather than silent replacement. Restored records remain labeled human-entered and `productionApproved: false`; saving or restoring clears dependent inspection, decision, simulation, quotation and package state through the existing source replacement path.
+
+## 2026-09-03 continuation: topology-to-run binding (coding gate 3)
+
+Reviewed SimScale topology mappings are now persisted before any mesh operation and made immutable per preparation/project/mesh level. When a run is created, its ID is durably bound to the exact mapping hash and content. Metric capture refuses a run without that binding, and the canonical evidence record now includes the provider project/simulation/run IDs plus the selected body, support and load entities, reviewer, geometry-parity acknowledgment and mesh level. Selection cardinality is derived from the reviewed Onshape setup instead of hard-coded four/two constants, though automatic arbitrary-part feature recognition remains unfinished. This closes the evidence-linkage portion of the topology gate, not the human mapping or real-provider validation portion.
+
+## 2026-09-03 continuation: unified provider-job lifecycle (coding gate 4)
+
+All generic provider jobs and active SimScale journal operations now share one lifecycle contract for ready, leased, waiting, write-uncertain, reconciliation-required and terminal states. The live journal migrates existing databases in place and durably saves the frozen request hash, bounded request JSON, creation/update timestamps and a single attempt count before every external write. Its safe status view exposes only lifecycle flags and allowlisted remote identifiers; it never exposes request bodies, credentials, signed URLs or provider messages. A process restart preserves completed work and leaves a possibly accepted write explicitly reconciliation-required and never retry-safe. Duplicate calls with the same inputs return the retained result, while changed inputs or uncertain writes remain blocked. This gate establishes durable lifecycle/restart behavior; provider-readback reconciliation of lost receipts is Gate 5 and remains unfinished.
+
+## 2026-09-03 continuation: safe lost-response reconciliation (coding gate 5)
+
+The operator page, authenticated local API and CLI now expose an explicit reconciliation action. It reads candidate SimScale objects without replaying writes, compares retained mesh/simulation/run specifications, checks the preceding operation chain, and refuses unsupported, mismatched, still-ready or still-active targets. An atomic journal update stores the reviewer and immutable reconciliation-evidence digest before the operation is treated as complete. Import recovery checks the finished CAD state and readable topology while keeping exact STEP/geometry and storage linkage explicitly operator-attested; it does not claim provider-proven byte parity. Legacy uncertain records without retained inputs remain blocked. Tests cover supported creation/start/cancel paths, changed specifications, wrong simulation chains, restart/legacy behavior and API routing. No real provider reconciliation or external write was performed for this coding gate.
+
 ## Latest checkpoint: private quotations and provider foundations
 
 ### Operator implementation push — 2026-09-03

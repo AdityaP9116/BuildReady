@@ -1,6 +1,7 @@
 import { activeDesign, activeDesignSource, activeSnapshotKey, gate7Handlers, setRegistrationState, workflowState } from './state.js?v=20260903-3'
 import { PROPOSAL_POLICY } from './domain.js?v=20260903-3'
 import { feaHandlers, feaState } from './fea-state.js?v=20260903-3'
+import { readLiveSimulationEvidence } from './live-simulation.js'
 
 /** @typedef {{ signal?: AbortSignal }} ToolExecutionOptions */
 /** @typedef {{ name: string, title: string, description: string, inputSchema: object, annotations: object, execute: Function }} WebMcpTool */
@@ -321,6 +322,12 @@ const compareSimulationRequirementsTool = emptyFeaTool(
 
 function simulationTools() {
   const tools = []
+  if (workflowState.liveSimulationEvidence) tools.push(Object.freeze({
+    name: 'get_live_simulation_evidence', title: 'Read retained live SimScale evidence',
+    description: 'Read human-selected provider evidence with current revision/expiry status. Does not approve engineering, start compute, or substitute recorded values.',
+    inputSchema: {type:'object',properties:{},additionalProperties:false},
+    annotations: {readOnlyHint:true,untrustedContentHint:true}, execute: readLiveSimulationEvidence,
+  }))
   if (feaState.capabilities && feaState.capabilities.provider !== 'disabled'
     && workflowState.designSource.sourceId !== 'onshape-live') tools.push(prepareStaticStressStudyTool)
   if (feaState.study) tools.push(getStaticStressStudyTool)

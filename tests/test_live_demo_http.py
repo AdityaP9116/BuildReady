@@ -52,7 +52,25 @@ class LiveHttpTests(unittest.TestCase):
         status,data,_ = self.request('POST','/api/private/workspaces',{'name':'Test','policy':{'cadDays':7,'quoteDays':30,'metadataUntilDeletion':True,'accepted':True}})
         self.assertEqual(201,status); workspace = data['result']['id']; path = '/api/private/live-demo?workspace='+workspace
         self.assertEqual([],self.request('GET',path)[1]['result'])
+        retained = '/api/private/live-evidence?workspace='+workspace+'&preparation='+'a'*64
+        self.assertEqual([],self.request('GET',retained)[1]['result'])
+        verification = self.request('GET',retained.replace('live-evidence','live-verification'))[1]['result']
+        self.assertFalse(verification['engineeringVerified'])
+        supplier = {'supplierId':None,'expectedVersion':None,'name':'Fictional test supplier','contact':None,'website':None,'active':True}
+        supplier_path = '/api/private/suppliers?workspace='+workspace
+        self.assertEqual(403,self.request('POST',supplier_path,supplier,headers={'X-CSRF-Token':'invalid'})[0])
+        self.assertEqual(201,self.request('POST',supplier_path,supplier)[0])
+        self.assertEqual(1,len(self.request('GET',supplier_path)[1]['result']))
+        self.assertEqual(403,self.request('GET',retained,headers={'Origin':'https://attacker.invalid'})[0])
         self.assertEqual(403,self.request('GET',path,headers={'Origin':'https://attacker.invalid'})[0])
         self.assertEqual(403,self.request('POST',path,{},headers={'X-CSRF-Token':'invalid'})[0])
         self.assertEqual(422,self.request('POST',path,{'action':'advance'})[0])
         self.assertEqual(404,self.request('GET','/api/private/live-demo?workspace=other')[0])
+        body = {'action':'reconcile','preparationId':'a'*64,'approval':None,'mapping':None,'level':0,
+                'kind':'mesh','identity':'','simulation':'','reconciliation':{'stage':'mesh-create-0'}}
+        with patch('scripts.simscale_live.LiveClient'), patch('scripts.simscale_live.LiveWorkflow') as workflow:
+            workflow.return_value.reconcile.return_value = {'status':'RECONCILED'}
+            status,data,_ = self.request('POST',path,body)
+            self.assertEqual(200,status)
+            self.assertEqual('RECONCILED',data['result']['status'])
+            workflow.return_value.reconcile.assert_called_once_with(body['reconciliation'])

@@ -54,6 +54,19 @@
         <button id="review-rfq" type="button">Review exact request for freezing</button>
       </section>
       <section class="proposal-card">
+        <h2>Preferred suppliers</h2>
+        <p>Private address book only. Saving a supplier does not verify them, create a quote, or authorize contact. Edits preserve history.</p>
+        <form id="supplier-form">
+          <input name="supplierId" type="hidden" /><input name="expectedVersion" type="hidden" />
+          <label>Name <input name="name" required maxlength="200" /></label>
+          <label>Contact details <input name="contact" maxlength="400" /></label>
+          <label>Website <input name="website" type="url" maxlength="400" /></label>
+          <label><input name="active" type="checkbox" checked /> Active supplier</label>
+          <button>Save supplier</button><button type="reset">Start new entry</button>
+        </form>
+        <div id="supplier-directory"></div>
+      </section>
+      <section class="proposal-card">
         <h2>4. Transcribe a supplier quotation</h2>
         <p>Use the original beside this form. This saves a pending draft; supplier-confirmed scope means the retained document explicitly identifies the same scope. It does not authenticate the document author.</p>
         <form id="quote-form">

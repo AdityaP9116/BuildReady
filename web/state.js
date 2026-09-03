@@ -161,6 +161,7 @@ export function activeDesignContext() {
     featureCount: activeDesign().features.length,
     nativeDimensions: activeDesign().nativeDimensions ?? [],
     manufacturingReview: activeDesign().manufacturingReview ?? null,
+    liveSimulationEvidence: workflowState.liveSimulationEvidence ?? null,
     manufacturingInputGaps: activeDesign().manufacturingInputGaps ?? [],
     unsavedPreview: false,
     inspectionStatus: workflowState.inspectionStatus,

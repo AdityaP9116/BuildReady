@@ -10,6 +10,8 @@ from unittest.mock import Mock, patch
 
 from scripts import serve
 from scripts.fea_service import FeaService, FeaStore, ServicePaths
+from scripts.manufacturing_review_store import ManufacturingReviewStore
+from urllib.parse import quote
 
 
 class QuietHandler(serve.SpaRequestHandler):
@@ -27,6 +29,8 @@ class FeaHttpTests(unittest.TestCase):
         self.service = FeaService(FeaStore(ServicePaths(root / 'fea.sqlite3', root / 'artifacts')))
         self.service_patch = patch.object(serve, '_fea_service', self.service)
         self.service_patch.start()
+        self.review_store_patch = patch.object(serve, '_manufacturing_review_store', ManufacturingReviewStore(root / 'reviews.sqlite3'))
+        self.review_store_patch.start()
         self.server = serve.LocalWorkspaceServer(('127.0.0.1', 0), QuietHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -37,6 +41,7 @@ class FeaHttpTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
         self.service_patch.stop()
+        self.review_store_patch.stop()
         self.temp.cleanup()
 
     def request(self, method: str, path: str, payload=None, headers=None):
@@ -93,6 +98,22 @@ class FeaHttpTests(unittest.TestCase):
         self.assertIn("frame-ancestors 'none'", main['Content-Security-Policy'])
         self.assertNotIn("frame-ancestors 'none'", panel['Content-Security-Policy'])
         self.assertIn('frame-ancestors https://cad.onshape.com', panel['Content-Security-Policy'])
+
+    def test_manufacturing_review_is_private_revision_bound_and_immutable(self) -> None:
+        review = {
+            'snapshotKey': 'onshape-source-1:doc/w/workspace/element/microversion',
+            'reviewer': 'Demo reviewer', 'acknowledged': True,
+            'groups': [{'featureId': 'thin-wall', 'reference': 'Face ABC', 'dimensions': {'thicknessMm': 2.5}}],
+        }
+        status, data, _ = self.request('POST', '/api/manufacturing-reviews', review)
+        self.assertEqual(201, status)
+        saved = json.loads(data)['record']
+        path = '/api/manufacturing-reviews?snapshotKey=' + quote(review['snapshotKey'], safe='')
+        status, data, _ = self.request('GET', path)
+        self.assertEqual(200, status)
+        self.assertEqual(saved, json.loads(data)['record'])
+        self.assertEqual(409, self.request('POST', '/api/manufacturing-reviews', {**review, 'reviewer': 'Different'})[0])
+        self.assertEqual(422, self.request('POST', '/api/manufacturing-reviews', {**review, 'acknowledged': False})[0])
 
 
 class CleanupScheduleTests(unittest.TestCase):

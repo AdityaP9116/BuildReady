@@ -9,8 +9,10 @@ import uuid
 
 try:
     from scripts.evidence_store import EvidenceStore, EvidenceError, Principal, canonical, digest, text_field
+    from scripts.job_lifecycle import lifecycle, require_transition
 except ModuleNotFoundError:
     from evidence_store import EvidenceStore, EvidenceError, Principal, canonical, digest, text_field
+    from job_lifecycle import lifecycle, require_transition
 
 
 class ProviderJobs:
@@ -67,7 +69,8 @@ class ProviderJobs:
     def _public(row):
         return {'id': row['id'], 'workspace': row['workspace'], 'operation': row['operation'],
                 'requestHash': row['request_hash'], 'state': row['state'], 'stage': row['stage'],
-                'remote': json.loads(row['remote_json']), 'result': json.loads(row['result_json']) if row['result_json'] else None}
+                'lifecycle': lifecycle(row['state']), 'remote': json.loads(row['remote_json']),
+                'result': json.loads(row['result_json']) if row['result_json'] else None}
 
     def claim(self, principal, workspace, identity) -> str:
         lease = secrets.token_urlsafe(24)
@@ -82,7 +85,11 @@ class ProviderJobs:
     def before_external_write(self, principal, workspace, identity, lease, stage):
         text_field(stage, 'Provider stage', 80)
         with self.store.connect(write=True) as db:
-            self.get(principal, workspace, identity, db=db)
+            prior = self.get(principal, workspace, identity, db=db)
+            try:
+                require_transition(prior['state'], 'WRITE_UNCERTAIN')
+            except ValueError as error:
+                raise EvidenceError('INVALID_JOB_TRANSITION', str(error), 409) from error
             updated = db.execute("UPDATE provider_jobs SET state='WRITE_UNCERTAIN',stage=?,updated=? WHERE id=? AND state='LEASED' AND lease=? AND lease_until>?",
                                  (stage, self.store.clock(), identity, lease, self.store.clock()))
             if updated.rowcount != 1:
@@ -103,6 +110,10 @@ class ProviderJobs:
                 return prior
             if any(k in prior['remote'] and prior['remote'][k] != v for k,v in remote.items()):
                 raise EvidenceError('RESULT_IMMUTABLE', 'A recorded provider identity cannot be replaced.', 409)
+            try:
+                require_transition(prior['state'], 'COMPLETE' if complete else 'WAITING')
+            except ValueError as error:
+                raise EvidenceError('INVALID_JOB_TRANSITION', str(error), 409) from error
             updated = db.execute('''UPDATE provider_jobs SET state=?,remote_json=?,result_json=?,lease=NULL,lease_until=NULL,updated=?
                 WHERE id=? AND lease=? AND lease_until>? AND state IN ('LEASED','WRITE_UNCERTAIN')''',
                 ('COMPLETE' if complete else 'WAITING', canonical({**prior['remote'], **remote}), canonical(result) if result is not None else None,

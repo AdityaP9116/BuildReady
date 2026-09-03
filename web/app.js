@@ -40,7 +40,8 @@ import {
 import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-3'
 import { CNC_RULES, PROPOSAL_POLICY } from './domain.js?v=20260903-3'
 import { fictionalQuotePreview } from './quote-engine.js?v=20260903-3'
-import { mountManufacturingReview } from './manufacturing-review.js?v=20260903-3'
+import { mountManufacturingReview, persistManufacturingReview, restoreManufacturingReview } from './manufacturing-review.js?v=20260903-3'
+import { mountLiveSimulation } from './live-simulation.js'
 
 const routes = {
   '/': renderDesign,
@@ -61,6 +62,27 @@ let bracketViewer = null
 let findingsSignature = ''
 let viewerSnapshotKey = ''
 let manufacturingReviewDesign = null
+const restoredManufacturingSnapshots = new Set()
+
+async function saveManufacturingReview(reviewed, input) {
+  const record = await persistManufacturingReview(input)
+  applyReviewedManufacturingDesign({
+    ...reviewed,
+    manufacturingReview: { ...reviewed.manufacturingReview, storageHash: record.reviewHash },
+  })
+}
+
+async function restoreSavedManufacturingReview() {
+  const design = activeDesign()
+  if (!design.sourceIdentity || design.manufacturingReview || restoredManufacturingSnapshots.has(design.sourceSnapshotKey)) return
+  restoredManufacturingSnapshots.add(design.sourceSnapshotKey)
+  try {
+    const reviewed = await restoreManufacturingReview(design)
+    if (reviewed && activeSnapshotKey() === design.sourceSnapshotKey) applyReviewedManufacturingDesign(reviewed)
+  } catch (error) {
+    workflowState.errorState = toolErrorEnvelope(error)
+  }
+}
 let onshapeBridge = null
 let onshapeExtensionContext = null
 let onshapeExtensionStatus = { phase: 'idle', message: 'Waiting for Onshape context.' }
@@ -300,6 +322,7 @@ function renderSimulation() {
       </section>
       <aside class="compatibility-note"><strong>Real SimScale operator workflow</strong><span>The controls below remain the recorded demonstration. Use the separate <a href="/live-demo.html">live commissioning workspace</a> for frozen STEP import, reviewed topology, bounded mesh/solve execution, cancellation and actual CSV metrics. Live numerical acceptance is still required.</span></aside>
       <section class="fea-layout">
+        <section id="live-simulation-evidence" class="proposal-card"></section>
         <form class="proposal-card fea-study-form" id="fea-study-form">
           <div class="proposal-heading">
             <div><p class="eyebrow">Controlled study</p><h2>Linear-static force setup</h2></div>
@@ -931,7 +954,7 @@ function renderDesignSource() {
     if (!reviewPanel) { reviewPanel = document.createElement('div'); reviewPanel.className = 'manufacturing-review'; sourcePanel.after(reviewPanel); manufacturingReviewDesign = null }
     if (manufacturingReviewDesign !== activeDesign()) {
       manufacturingReviewDesign = activeDesign()
-      mountManufacturingReview(reviewPanel, activeDesign(), applyReviewedManufacturingDesign)
+      mountManufacturingReview(reviewPanel, activeDesign(), saveManufacturingReview)
     }
   }
 
@@ -1072,6 +1095,7 @@ function defaultFeaToolInput(toolName) {
 }
 
 function bindSimulationControls() {
+  mountLiveSimulation(document.querySelector('#live-simulation-evidence'))
   document.querySelector('#fea-study-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
     const output = document.querySelector('#fea-tool-output')
@@ -1374,6 +1398,7 @@ function bindDesignSourceControls() {
     button.textContent = 'Loading from Onshape…'
     try {
       await gate7Handlers.load_onshape_design({}, {})
+      await restoreSavedManufacturingReview()
     } catch (error) {
       const detail = document.querySelector('#source-detail')
       if (detail) detail.textContent = toolErrorEnvelope(error).error.message
@@ -1655,6 +1680,7 @@ async function startApplication() {
         configureOnshapeExtensionContext(onshapeExtensionContext)
         setOnshapeAvailability(true)
         await gate7Handlers.load_onshape_design({}, {})
+        await restoreSavedManufacturingReview()
       } catch (error) {
         workflowState.errorState = toolErrorEnvelope(error)
         setOnshapeAvailability(false)
@@ -1683,6 +1709,7 @@ async function startApplication() {
     updateOnshapePanel()
     setOnshapeAvailability(true)
     await gate7Handlers.load_onshape_design({}, {})
+    await restoreSavedManufacturingReview()
     onshapeExtensionStatus = {
       phase: 'connected',
       message: 'Read-only snapshot loaded. This panel does not automatically follow CAD edits. Open the full workspace to recheck and activate revisions before continuing.',
