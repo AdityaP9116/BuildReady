@@ -172,7 +172,9 @@ async function onshapeGet(path, env) {
 }
 
 function configuredContext(env, request) {
-  const url = new URL(request.url)
+  // Cloudflare supplies `request`; direct contract tests and internal callers
+  // may omit it to request the deployment's configured default Part Studio.
+  const url = new URL(request?.url ?? 'https://buildready.invalid/api/onshape/design')
   const supplied = ['documentId', 'workspaceOrVersion', 'workspaceOrVersionId', 'elementId']
     .some((name) => url.searchParams.has(name))
 
