@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import secrets
 import uuid
 
@@ -96,9 +98,11 @@ class ProviderJobs:
         with self.store.connect(write=True) as db:
             prior = self.get(principal, workspace, identity, db=db)
             if prior['state'] == 'COMPLETE':
-                if prior['result'] != result:
+                if prior['result'] != result or any(prior['remote'].get(k) != v for k,v in remote.items()) or not complete:
                     raise EvidenceError('RESULT_IMMUTABLE', 'The completed job already has different evidence.', 409)
                 return prior
+            if any(k in prior['remote'] and prior['remote'][k] != v for k,v in remote.items()):
+                raise EvidenceError('RESULT_IMMUTABLE', 'A recorded provider identity cannot be replaced.', 409)
             updated = db.execute('''UPDATE provider_jobs SET state=?,remote_json=?,result_json=?,lease=NULL,lease_until=NULL,updated=?
                 WHERE id=? AND lease=? AND lease_until>? AND state IN ('LEASED','WRITE_UNCERTAIN')''',
                 ('COMPLETE' if complete else 'WAITING', canonical({**prior['remote'], **remote}), canonical(result) if result is not None else None,
@@ -114,7 +118,7 @@ class ProviderJobs:
             return {'safeJobsReleased': count, 'uncertainWrites': db.execute("SELECT COUNT(*) FROM provider_jobs WHERE state='WRITE_UNCERTAIN'").fetchone()[0]}
 
     def authorize_runs(self, principal, workspace, setup_hash, max_runs, expires_at, subject, nonce):
-        if type(max_runs) is not int or not 1 <= max_runs <= 10 or not self.store.clock() < expires_at <= self.store.clock() + 3600:
+        if not isinstance(setup_hash, str) or not re.fullmatch(r'sha256-[0-9a-f]{64}', setup_hash) or type(expires_at) not in (int,float) or not math.isfinite(expires_at) or type(max_runs) is not int or not 1 <= max_runs <= 10 or not self.store.clock() < expires_at <= self.store.clock() + 3600:
             raise EvidenceError('INVALID_COMPUTE_ENVELOPE', 'Authorize 1–10 runs for at most one hour.')
         content_hash = digest({'setupHash': setup_hash, 'maxRuns': max_runs, 'expiresAt': expires_at})
         identity = str(uuid.uuid4())
@@ -126,13 +130,18 @@ class ProviderJobs:
     def reserve_run(self, principal, workspace, authorization, job_id, setup_hash):
         with self.store.connect(write=True) as db:
             job = self.get(principal, workspace, job_id, db=db)
-            if job['operation'] != 'simscale_solve' or job['state'] != 'LEASED':
+            stored = db.execute('SELECT request_json,lease_until FROM provider_jobs WHERE id=?', (job_id,)).fetchone()
+            if job['operation'] != 'simscale_solve' or job['state'] != 'LEASED' or stored['lease_until'] <= self.store.clock():
                 raise EvidenceError('INVALID_JOB', 'Only a currently leased solve job can reserve compute.', 409)
+            if json.loads(stored['request_json']).get('setupHash') != setup_hash:
+                raise EvidenceError('COMPUTE_APPROVAL_REQUIRED', 'The job inputs do not match the approved setup.', 409)
             row = db.execute('SELECT * FROM compute_authorizations WHERE id=? AND workspace=?', (authorization, workspace)).fetchone()
             if row is None or row['setup_hash'] != setup_hash or row['expires'] <= self.store.clock():
                 raise EvidenceError('COMPUTE_APPROVAL_REQUIRED', 'An unexpired approval for this exact setup is required.', 409)
             if db.execute('SELECT 1 FROM compute_reservations WHERE authorization=? AND job=?', (authorization, job_id)).fetchone():
                 return
+            if db.execute('SELECT 1 FROM compute_reservations WHERE job=?', (job_id,)).fetchone():
+                raise EvidenceError('COMPUTE_ALREADY_RESERVED', 'This job already has a reservation under another authorization.', 409)
             if row['used_runs'] >= row['max_runs']:
                 raise EvidenceError('COMPUTE_BUDGET_EXHAUSTED', 'The approved run count is exhausted.', 409)
             db.execute('UPDATE compute_authorizations SET used_runs=used_runs+1 WHERE id=?', (authorization,))

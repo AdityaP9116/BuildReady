@@ -63,7 +63,7 @@ def main() -> None:
         cwd=ROOT,
         check=True,
     )
-    for script in ("app.js", "webmcp.js", "fea-state.js", "fea-client.js", "fea-validation.js", "sourcing.js"):
+    for script in ("app.js", "webmcp.js", "fea-state.js", "fea-client.js", "fea-validation.js", "sourcing.js", "live-demo.js", "manufacturing-review.js"):
         subprocess.run(["node", "--check", str(ROOT / "web" / script)], cwd=ROOT, check=True)
 
 

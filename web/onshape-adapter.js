@@ -83,6 +83,17 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
     throw new OnshapeAdapterError('ONSHAPE_BAD_PAYLOAD', 'the Onshape response did not contain variables.')
   }
   const discovery = discoverManufacturingVariables(payload.variables, parseQuantityMm)
+  // These are authored feature parameters, not identified final CAD regions.
+  // Never feed their labels to semantic variable inference or reuse fixture values.
+  const nativeDimensions = (Array.isArray(payload.nativeDimensions) ? payload.nativeDimensions : []).slice(0, 100).map((item) => {
+    let valueMm = null
+    try {
+      const parsed = parseQuantityMm(item.expression)
+      if (parsed > 0) valueMm = parsed
+    } catch { /* Dependent expressions remain unknown. */ }
+    return { ...item, valueMm, semanticStatus: 'unassigned',
+      evidenceLevel: 'authored-parameter-not-measured-geometry' }
+  })
   const byRole = new Map(discovery.mappings.map((mapping) => [mapping.roleId, mapping]))
   const featureDefinitions = source?.measurementGroups
   if (!Array.isArray(featureDefinitions) || featureDefinitions.length === 0) {
@@ -111,7 +122,7 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
       selected: features.length === 0,
     })
   }
-  if (features.length === 0) {
+  if (features.length === 0 && nativeDimensions.length === 0) {
     throw new OnshapeAdapterError(
       'ONSHAPE_NO_APPLICABLE_MEASUREMENTS',
       'BuildReady could not find a complete set of named dimensions for any configured check. Add descriptive Part Studio variables, then try again.',
@@ -133,6 +144,13 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
   const revisionId = `onshape-${microversion}`
   const provenance = `${payload.document.documentId}/${microversion}`
   const designId = `ONSHAPE-${payload.document.documentId}-${payload.document.elementId}`
+  const manufacturingInputGaps = featureDefinitions.filter((definition) => (
+    !features.some((feature) => feature.featureId === definition.featureId)
+  )).map((definition) => ({
+    ruleId: definition.ruleId, featureId: definition.featureId, label: definition.label,
+    missingRoles: Object.values(definition.dimensions).filter((roleId) => !byRole.has(roleId)),
+    requiredReview: definition.requiredReview ?? 'Identify the actual geometry region and review the required measurements.',
+  }))
 
   return {
     design: {
@@ -152,6 +170,8 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
         reviewStatus: 'unknown',
       },
       quantity: null,
+      nativeDimensions,
+      manufacturingInputGaps,
       features: features.map((feature) => ({
         ...feature,
         objectReference: `onshape://${payload.document.documentId}/${payload.document.elementId}/${feature.featureId}`,
@@ -185,6 +205,8 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
         quantity: source.reviewContext?.quantity ?? 'not-provided',
       },
       featureSummary: payload.featureSummary ?? [],
+      nativeDimensions,
+      manufacturingInputGaps,
       discovery,
     },
     measurements: Object.fromEntries(discovery.mappings.map((mapping) => [mapping.roleId, mapping.valueMm])),

@@ -1,5 +1,6 @@
 import {
   activeDesign,
+  applyReviewedManufacturingDesign,
   activeSnapshotKey,
   gate7Handlers,
   recordHumanDecision,
@@ -38,6 +39,8 @@ import {
 } from './fea-state.js?v=20260903-3'
 import { createModelInsightAssistant } from './insight-assistant.js?v=20260903-3'
 import { CNC_RULES, PROPOSAL_POLICY } from './domain.js?v=20260903-3'
+import { fictionalQuotePreview } from './quote-engine.js?v=20260903-3'
+import { mountManufacturingReview } from './manufacturing-review.js?v=20260903-3'
 
 const routes = {
   '/': renderDesign,
@@ -57,6 +60,7 @@ const globalResetButton = document.querySelector('#global-reset-button')
 let bracketViewer = null
 let findingsSignature = ''
 let viewerSnapshotKey = ''
+let manufacturingReviewDesign = null
 let onshapeBridge = null
 let onshapeExtensionContext = null
 let onshapeExtensionStatus = { phase: 'idle', message: 'Waiting for Onshape context.' }
@@ -204,7 +208,7 @@ function renderDesign() {
           <h2 id="source-title">Controlled fixture</h2>
           <p id="source-detail">BRKT-001 revision B ships with the app so the workflow runs with no account or setup.</p>
           <p id="source-provenance" class="source-provenance" hidden></p>
-          <details id="source-discovery" class="source-discovery" hidden><summary>Variable discovery</summary><div id="source-discovery-content"></div></details>
+          <details id="source-discovery" class="source-discovery" hidden><summary>Source dimensions and missing checks</summary><div id="source-discovery-content"></div></details>
         </div>
         <div class="source-actions">
           <button type="button" id="load-onshape-source" hidden>Load live Onshape model</button>
@@ -294,6 +298,7 @@ function renderSimulation() {
         </div>
         <span class="stage-status" id="fea-mode-badge">checking</span>
       </section>
+      <aside class="compatibility-note"><strong>Real SimScale operator workflow</strong><span>The controls below remain the recorded demonstration. Use the separate <a href="/live-demo.html">live commissioning workspace</a> for frozen STEP import, reviewed topology, bounded mesh/solve execution, cancellation and actual CSV metrics. Live numerical acceptance is still required.</span></aside>
       <section class="fea-layout">
         <form class="proposal-card fea-study-form" id="fea-study-form">
           <div class="proposal-heading">
@@ -399,7 +404,7 @@ function renderOnshapePanel() {
 
       ${renderModelInsightAssistant('embedded')}
 
-      <details class="source-discovery panel-discovery"><summary>How dimensions were recognized</summary><div id="source-discovery-content"></div></details>
+      <details class="source-discovery panel-discovery"><summary>Source dimensions and missing checks</summary><div id="source-discovery-content"></div></details>
 
       <details class="panel-more-actions">
         <summary>Full workspace</summary>
@@ -436,19 +441,35 @@ function renderOnshapePanel() {
 function renderSuppliers() {
   const quotes = workflowState.supplierQuotes
   if (quotes.length === 0) {
+    const preview = fictionalQuotePreview()
     return `
       <div class="page">
         ${pageIntro(
           'Supplier comparison',
           'Compare controlled manufacturing options.',
-          'Two fictional suppliers return normalized prices, lead times, assumptions, and DFM feedback for the reviewed configuration.',
+          'Explore fictional price and lead-time examples. These placeholders are not quotations for your active design.',
         )}
+        <aside class="compatibility-note warning-note"><strong>Fictional supplier placeholders</strong><span>These examples are not priced for your active bracket. They are not supplier-issued offers, do not imply an FEA pass, and cannot authorize an order.</span></aside>
+        <section class="supplier-grid" aria-label="Fictional supplier placeholders">
+          ${preview.quotes.map((quote) => `<article class="supplier-card">
+            <header><h2>${quote.supplierName}</h2><span>FICTIONAL</span></header>
+            <p>${preview.quantity} illustrative parts · ${quote.currency}</p>
+            <dl class="quote-breakdown">
+              <div><dt>Unit price</dt><dd>$${quote.unitPrice.toFixed(2)}</dd></div>
+              <div><dt>Setup</dt><dd>$${quote.setup.toFixed(2)}</dd></div>
+              <div><dt>Known subtotal</dt><dd>$${quote.knownSubtotal.toFixed(2)}</dd></div>
+              <div><dt>Shipping / tax</dt><dd>Unknown / unknown</dd></div>
+              <div><dt>Final total</dt><dd>Unknown</dd></div>
+              <div><dt>Example lead time</dt><dd>${quote.leadTimeDays} days</dd></div>
+            </dl><p>${quote.label}</p></article>`).join('')}
+        </section>
         <section class="empty-state">
-          <span>Gate 6</span>
-          <h2>No reviewed configuration has been quoted.</h2>
+          <span>Real evidence stays separate</span>
+          <h2>Your preferred suppliers</h2>
+          <p>A reusable preferred-supplier directory is planned. The private workspace already accepts supplier identities and original quotations manually; these fictional cards are never imported as real evidence.</p>
           <p>Have an actual supplier document? The private evidence workspace keeps real requests and quotations separate from this demonstration and does not require completed FEA.</p>
           <a class="button-link" href="/sourcing.html">Open private supplier evidence</a>
-          <p>Complete the inspection, record a visible human decision, finish the bounded simulation stage, and then run the comparison.</p>
+          <p>No supplier has been contacted. These placeholders do not advance the reviewed manufacturing, simulation or quotation checkpoints.</p>
           <a class="button-link" href="/design" data-route>Return to design</a>
         </section>
       </div>
@@ -647,7 +668,6 @@ function renderViewerSelection() {
   const feature = activeDesign().features.find(
     (candidate) => candidate.featureId === workflowState.selectedFeatureId,
   )
-  if (!feature) return
   const finding = workflowState.findings.find(
     (candidate) => candidate.findingId === workflowState.selectedFindingId,
   )
@@ -657,6 +677,15 @@ function renderViewerSelection() {
   const values = document.querySelector('#measurement-values')
   const calculation = document.querySelector('#measurement-calculation')
   if (!title || !featureId || !severity || !values || !calculation) return
+  if (!feature) {
+    title.textContent = 'Manufacturing inputs needed'
+    featureId.textContent = 'No manufacturing region identified'
+    severity.textContent = 'Assessment incomplete'
+    severity.dataset.severity = 'none'
+    values.replaceChildren()
+    calculation.textContent = 'Review the source evidence inventory and required measurements. No fixture dimensions are used for this live model.'
+    return
+  }
 
   title.textContent = feature.label
   featureId.textContent = feature.featureId
@@ -675,12 +704,12 @@ function renderFindings(findingCount, findingsList) {
   const highCount = workflowState.findings.filter((finding) => finding.severity === 'high').length
   const mediumCount = workflowState.findings.filter((finding) => finding.severity === 'medium').length
   findingCount.textContent = workflowState.inspectionStatus === 'complete'
-    ? `${workflowState.findings.length} ${workflowState.findings.length === 1 ? 'issue' : 'issues'}`
+    ? workflowState.inspection?.assessmentStatus === 'incomplete' ? 'Incomplete assessment' : `${workflowState.findings.length} ${workflowState.findings.length === 1 ? 'issue' : 'issues'}`
     : 'Not run'
   findingCount.title = workflowState.inspectionStatus === 'complete'
     ? `${highCount} high priority, ${mediumCount} medium priority`
     : ''
-  const nextSignature = workflowState.findings.map((finding) => finding.findingId).join('|')
+  const nextSignature = `${activeSnapshotKey()}:${workflowState.inspectionStatus}:${workflowState.inspection?.assessmentStatus}:${workflowState.findings.map((finding) => finding.findingId).join('|')}`
   if (nextSignature !== findingsSignature) {
     findingsSignature = nextSignature
     findingsList.innerHTML = workflowState.findings.length
@@ -695,7 +724,11 @@ function renderFindings(findingCount, findingsList) {
           <span class="finding-copy"><b>Next step:</b> ${finding.recommendation}</span>
         </button>
       `).join('')
-      : '<p class="findings-empty">Run the inspection to evaluate all five controlled CNC rules.</p>'
+      : workflowState.inspection?.assessmentStatus === 'incomplete'
+        ? '<p class="findings-empty">Assessment incomplete. Review the missing measurements in the source evidence panel; zero findings is not a pass.</p>'
+        : workflowState.inspectionStatus === 'complete'
+          ? '<p class="findings-empty">No findings at the selected severity and configured thresholds. This is not production approval.</p>'
+          : '<p class="findings-empty">Run the inspection to evaluate supported CNC rules and report missing inputs.</p>'
 
     findingsList.querySelectorAll('[data-finding-id]').forEach((card) => {
       card.addEventListener('click', () => {
@@ -744,7 +777,7 @@ function updateDiagnostics() {
   webMcpStatus.querySelector('small').textContent = available ? 'Available' : 'Compatibility mode'
   headerToolCount.textContent = `${workflowState.registeredToolCount} ${workflowState.registeredToolCount === 1 ? 'tool' : 'tools'}`
   const completedStages = [
-    workflowState.inspectionStatus === 'complete',
+    workflowState.inspectionStatus === 'complete' && workflowState.inspection?.assessmentStatus !== 'incomplete',
     ['approved', 'rejected'].includes(workflowState.decisionStatus),
     feaState.study?.lifecycleState === 'COMPLETE' && feaState.study.currentness === 'CURRENT',
     workflowState.supplierQuotes.length === 2,
@@ -887,11 +920,20 @@ function renderDesignSource() {
   provenance.hidden = !isLive
   if (isLive) {
     const availableRuleCount = designSource.provenance.availableRuleCount ?? '—'
-    provenance.textContent = `Document: ${designSource.provenance.documentName} · ${designSource.provenance.inferredMeasurementCount}/${designSource.provenance.measurementCount} dimensions recognized · ${designSource.provenance.applicableRuleCount}/${availableRuleCount} checks available · retrieved ${designSource.provenance.retrievedAt}`
+    provenance.textContent = `Document: ${designSource.provenance.documentName} · ${designSource.provenance.inferredMeasurementCount}/${designSource.provenance.measurementCount} named dimensions recognized · ${designSource.provenance.nativeDimensions?.length ?? 0} native parameters inventoried · ${designSource.provenance.applicableRuleCount}/${availableRuleCount} checks available · retrieved ${designSource.provenance.retrievedAt}`
   }
   const discovery = document.querySelector('#source-discovery')
   if (discovery) discovery.hidden = !isLive
   renderDiscoverySummary(isLive ? designSource.provenance : null)
+  const sourcePanel = document.querySelector('#source-discovery-content')
+  if (sourcePanel && isLive) {
+    let reviewPanel = sourcePanel.parentElement.querySelector('.manufacturing-review')
+    if (!reviewPanel) { reviewPanel = document.createElement('div'); reviewPanel.className = 'manufacturing-review'; sourcePanel.after(reviewPanel); manufacturingReviewDesign = null }
+    if (manufacturingReviewDesign !== activeDesign()) {
+      manufacturingReviewDesign = activeDesign()
+      mountManufacturingReview(reviewPanel, activeDesign(), applyReviewedManufacturingDesign)
+    }
+  }
 
   // Switching source discards derived evidence, so hide the control once the
   // engineer has work that a reload would throw away.
@@ -921,6 +963,17 @@ function renderDesignIdentity() {
 function synchronizeDesignWorkspace() {
   renderDesignIdentity()
   renderDesignSource()
+  const isLive = workflowState.designSource.sourceId === 'onshape-live'
+  const canvas = document.querySelector('#bracket-canvas')
+  if (canvas) canvas.hidden = isLive
+  const legend = document.querySelector('.viewer-legend')
+  if (legend) legend.hidden = isLive
+  const resetCamera = document.querySelector('#reset-camera')
+  if (resetCamera) resetCamera.hidden = isLive
+  const instructions = document.querySelector('#viewer-instructions')
+  if (instructions) instructions.textContent = isLive
+    ? 'Live geometry is not rendered here. Inspect the exact model in Onshape. Native parameters and required manufacturing inputs are listed in the source evidence panel; the fixture schematic is hidden.'
+    : 'Point to or click model features. With the model focused, use arrow keys to move between features and Home to reset the camera.'
   const nextSnapshotKey = activeSnapshotKey()
   if (bracketViewer && viewerSnapshotKey !== nextSnapshotKey) {
     bracketViewer.setDesign(activeDesign())
@@ -1115,6 +1168,30 @@ function renderDiscoverySummary(provenance) {
     list.append(row)
   }
   container.append(list)
+  if (provenance.nativeDimensions?.length) {
+    const heading = document.createElement('h3')
+    heading.textContent = 'Native feature parameters — not final geometry measurements'
+    const nativeList = document.createElement('ul')
+    for (const item of provenance.nativeDimensions) {
+      const row = document.createElement('li')
+      row.textContent = `${item.featureName} / ${item.parameterId}: ${item.valueMm === null ? 'unresolved expression' : `${item.valueMm} mm`} · ${item.featureId} · manufacturing role unassigned`
+      nativeList.append(row)
+    }
+    container.append(heading, nativeList)
+  }
+  if (provenance.manufacturingInputGaps?.length) {
+    const heading = document.createElement('h3')
+    heading.textContent = 'Measurements needed before manufacturing screening'
+    const gaps = document.createElement('ul')
+    for (const gap of provenance.manufacturingInputGaps) {
+      const row = document.createElement('li')
+      row.textContent = `${gap.ruleId} — ${gap.label}: ${gap.requiredReview} Missing: ${gap.missingRoles.map(measurementLabel).join(', ')}.`
+      gaps.append(row)
+    }
+    const note = document.createElement('p')
+    note.textContent = 'Also confirm material, process, quantity, finish, inspection and delivery requirements. Parameter inventory is not CAD export, production approval or simulation evidence.'
+    container.append(heading, gaps, note)
+  }
 
   if (discovery.unmapped.length > 0 || discovery.rejected.length > 0) {
     const note = document.createElement('p')
@@ -1447,7 +1524,9 @@ function bindManualToolControls() {
           if (toolName === 'inspect_cnc_manufacturability') {
             const high = workflowState.findings.filter((finding) => finding.severity === 'high').length
             const medium = workflowState.findings.filter((finding) => finding.severity === 'medium').length
-            output.textContent = `Check complete: ${workflowState.findings.length} issues found (${high} high priority, ${medium} medium priority). ${workflowState.inspection.coverage.evaluatedRuleCount} of ${workflowState.inspection.coverage.availableRules} checks ran.`
+            output.textContent = `${workflowState.inspection.assessmentStatus === 'incomplete' ? 'Assessment incomplete' : 'Screening complete'}: ${workflowState.findings.length} issues found (${high} high priority, ${medium} medium priority). ${workflowState.inspection.coverage.evaluatedRuleCount} of ${workflowState.inspection.coverage.availableRules} checks ran. Missing checks are not passes.`
+          } else if (toolName === 'get_issue_details') {
+            output.textContent = 'The selected finding is ready below. You can also ask BuildReady a follow-up question.'
           } else if (toolName === 'preview_radius_change') {
             output.textContent = 'Preview prepared. This is a review suggestion only; the Onshape model was not changed.'
           } else if (toolName === 'prepare_quote_comparison') {

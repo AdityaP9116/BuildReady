@@ -108,7 +108,42 @@ def dispatch(handler, method: str, path: str) -> bool:
         service = SourcingService(store)
         parts = path.removeprefix('/api/private/').split('/')
         result, status = None, 200
-        if parts == ['logout'] and method == 'POST':
+        if parts == ['live-demo']:
+            # Local operator-only commissioning surface, never an unattended tool.
+            with store.connect() as db:
+                store.authorize(db, principal, scope)
+            if principal.owner != 'local-operator':
+                raise EvidenceError('OPERATOR_REQUIRED', 'Only the configured local operator can commission this demo.', 403)
+            try:
+                from scripts.live_demo_preparation import PreparationStore
+                from scripts.simscale_live import LiveClient, LiveWorkflow, SimScaleTransportError
+            except ModuleNotFoundError:
+                from live_demo_preparation import PreparationStore
+                from simscale_live import LiveClient, LiveWorkflow, SimScaleTransportError
+            preparation = PreparationStore()
+            if method == 'GET':
+                with preparation.connect() as db:
+                    rows = db.execute("SELECT id,expires,source_json FROM preparations WHERE state='COMPLETE' AND expires>?", (time.time(),)).fetchall()
+                result = [{'preparationId': row['id'], 'expiresAt': row['expires'], 'source': json.loads(row['source_json'])} for row in rows]
+            elif method == 'POST':
+                body = json_body(handler)
+                exact(body, {'action','preparationId','approval','mapping','level','kind','identity','simulation'})
+                if body['action'] not in {'draft','status','import','topology','advance','cancel','results'}:
+                    raise EvidenceError('INVALID_ACTION', 'Unsupported commissioning action.')
+                client = LiveClient(api_key=os.environ.get('SIMSCALE_API_KEY',''), project_id=os.environ.get('SIMSCALE_PROJECT_ID',''))
+                try:
+                    live = LiveWorkflow(preparation, body['preparationId'], client, require_cad=body['action'] not in {'status','cancel'})
+                    if body['action'] == 'draft': result = live.draft
+                    elif body['action'] == 'status': result = live.journal.summary()
+                    elif body['action'] == 'import': result = live.import_cad(body['approval'])
+                    elif body['action'] == 'topology': result = live.topology()
+                    elif body['action'] == 'advance': result = live.advance(body['mapping'], body['approval'], body['level'])
+                    elif body['action'] == 'results': result = live.capture_metrics(body['simulation'], body['identity'], body['mapping'])
+                    else: result = live.cancel(body['kind'], body['identity'], body['simulation'])
+                except (ValueError, SimScaleTransportError) as error:
+                    # Messages here are local bounded validation text, never raw provider responses.
+                    raise EvidenceError(getattr(error, 'code', 'LIVE_OPERATION_BLOCKED'), str(error), 409) from None
+        elif parts == ['logout'] and method == 'POST':
             store.logout(principal)
             reply(handler, 200, {'ok': True}, cookie=f'{COOKIE}=; HttpOnly; SameSite=Strict; Path=/api/private/; Max-Age=0')
             return True

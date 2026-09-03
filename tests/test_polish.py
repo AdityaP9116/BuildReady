@@ -77,7 +77,7 @@ class ProductPolishTests(unittest.TestCase):
             "Check this model",
             "Explain in chat",
             "Explanation added to Ask BuildReady.",
-            "How dimensions were recognized",
+            "Source dimensions and missing checks",
             'id="insight-transcript" role="log"',
             'id="insight-input"',
             'id="insight-export-md"',

@@ -69,3 +69,40 @@ test('authorization errors are non-retryable', async () => {
   assert.equal(payload.error.code, 'ONSHAPE_UNAUTHORIZED')
   assert.equal(payload.error.retryable, false)
 })
+
+test('native-only immutable inventory excludes suppressed and unused extents', async () => {
+  const calls = []
+  const extrude = (id, bound, suppressed = false) => ({ featureId: id, featureType: 'extrude', suppressed,
+    parameters: [{ parameterId: 'bodyType', value: 'SOLID' }, { parameterId: 'endBound', value: bound },
+      { parameterId: 'depth', expression: '25*millimeter', value: 0 }] })
+  globalThis.fetch = async (url) => {
+    calls.push(String(url))
+    if (String(url).includes('/currentmicroversion')) return Response.json({ microversion: 'abcdef0123456789abcdef01' })
+    if (String(url).includes('/features')) return Response.json({ features: String(url).includes('/m/') ? [
+      extrude('blind', 'BLIND'), extrude('up-to-next', 'UP_TO_NEXT'), extrude('up-to-face', 'UP_TO_SURFACE'),
+      extrude('suppressed', 'BLIND', true),
+      { featureId: 'fillet', featureType: 'fillet', parameters: [{ parameterId: 'radius', expression: '2 mm' }] },
+      { suppressed: true, parameters: [{ parameterId: 'name', value: 'wallThickness' }, { parameterId: 'value', expression: '1 mm' }] },
+    ] : [extrude('earlier-workspace-value', 'BLIND')] })
+    return Response.json({ name: 'Native model' })
+  }
+  const response = await onRequestGet({ env: configuredEnv('7') })
+  const payload = await response.json()
+  assert.equal(response.status, 200)
+  assert.deepEqual(payload.variables, [])
+  assert.deepEqual(payload.nativeDimensions.map((item) => item.featureId), ['blind', 'fillet'])
+  assert.equal(payload.nativeDimensions[0].semanticStatus, 'unassigned')
+  assert.equal(payload.nativeDimensions[0].value, undefined)
+  assert.equal(calls.filter((url) => url.includes('/m/')).length, 1)
+})
+
+test('mismatched immutable revision is rejected', async () => {
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/currentmicroversion')) return Response.json({ microversion: 'abcdef0123456789abcdef01' })
+    if (String(url).includes('/m/')) return Response.json({ microversionId: '999999999999999999999999' })
+    return Response.json({ features: [] })
+  }
+  const response = await onRequestGet({ env: configuredEnv('8') })
+  const payload = await response.json()
+  assert.equal(payload.error.code, 'ONSHAPE_REVISION_UNVERIFIED')
+})

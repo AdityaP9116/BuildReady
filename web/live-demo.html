@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BuildReady · Live commissioning</title><link rel="stylesheet" href="/styles.css"><script type="module" src="/live-demo.js"></script></head>
+<body><main class="sourcing-shell">
+<p><a href="/simulation">Back to Simulation</a> · <a href="/sourcing.html">Private workspace setup</a></p>
+<h1>Live SimScale commissioning</h1>
+<p>This operator workflow is separate from the recorded simulation demo. No action on this page certifies engineering correctness. API estimates do not prove a run is free: verify included static analysis and meshing entitlement in your account before approval. No billing enrollment or upgrades are authorized.</p>
+<form id="unlock"><label>Local workspace token <input id="token" type="password" autocomplete="off" required></label><button>Unlock</button></form>
+<section id="controls" hidden>
+<label>Private workspace <select id="workspace"></select></label>
+<label>Frozen preparation <select id="preparation"></select></label>
+<p>If no preparation is listed, export the current single-part immutable Onshape version using the preparation script. CAD expires after seven days.</p>
+<button data-action="draft">Inspect frozen setup</button> <button data-action="status">Read operation journal</button>
+<h2>1. Explicit transfer / free-compute approval</h2>
+<p>Paste the reviewed approval JSON from the partner runbook. It must identify this exact setup/project, expire within one hour, and cap spending at zero. Import transfers the demo CAD to the configured project; check its visibility first.</p>
+<label>Approval JSON <textarea id="approval" rows="10" spellcheck="false"></textarea></label>
+<label><input id="human-ack" type="checkbox"> I am the operator, have reviewed the exact action, and authorize only this disclosed transfer or included no-charge compute.</label>
+<button data-action="import">Upload this frozen STEP</button> <button data-action="topology">Read imported face identities</button>
+<h2>2. Review topology in SimScale</h2>
+<p>Map one body, four support faces and two load faces. Inspect imported dimensions, SI units, orientation and the selected faces. Entity names alone do not establish geometric parity. Record your name and the setup/CAD/state identifiers in the mapping JSON.</p>
+<label>Reviewed mapping JSON <textarea id="mapping" rows="10" spellcheck="false"></textarea></label>
+<label>Mesh level <select id="level"><option value="0">0 · coarse</option><option value="1">1 · medium</option><option value="2">2 · fine</option></select></label>
+<button data-action="advance">Advance this approved mesh / simulation</button>
+<p>Each click advances the same journaled operation. Check progress before clicking again. A timeout with an uncertain write requires reconciliation in SimScale; there is no automatic resubmission. Success returns real result resource IDs, not invented stress values.</p>
+<h2>Cancel a created operation</h2>
+<label>Kind <select id="kind"><option value="mesh">Mesh</option><option value="run">Simulation run</option></select></label>
+<label>Operation/run ID <input id="identity"></label><label>Simulation ID (runs only) <input id="simulation"></label><button data-action="cancel">Request cancellation</button>
+<button id="logout">Lock workspace</button>
+<h2>3. Read actual CSV results</h2>
+<p>Enter the finished simulation/run IDs above and a reviewed result-column mapping below. Use the generated BuildReady stress, displacement and reactions resources. Column meanings, magnitude versus component, units and the final reaction row must be checked against the provider CSV. Values remain engineering-unverified.</p>
+<label>Result column mapping JSON <textarea id="result-selection" rows="8" spellcheck="false"></textarea></label><button data-action="results">Read real result metrics</button>
+</section>
+<h2>Operation evidence</h2><pre id="output" role="status">Locked. No remote actions have been taken.</pre>
+</main></body></html>

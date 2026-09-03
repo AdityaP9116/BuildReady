@@ -88,6 +88,8 @@ def main() -> int:
             # Provider document text, dimensions and IDs stay out of setup output.
             result = {'ok': code == 200 and payload.get('ok') is True, 'mode': 'read-only-onshape-check',
                       'errorCode': payload.get('error', {}).get('code') if code != 200 else None,
+                      'namedVariableCount': len(payload.get('variables', [])),
+                      'nativeParameterCount': len(payload.get('nativeDimensions', [])),
                       'exactCadExportVerified': False, 'liveSimulationReady': False}
     else:
         result = status

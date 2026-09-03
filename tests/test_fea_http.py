@@ -19,6 +19,9 @@ class QuietHandler(serve.SpaRequestHandler):
 
 class FeaHttpTests(unittest.TestCase):
     def setUp(self) -> None:
+        cleanup_patch = patch.object(serve, 'cleanup_default_preparations', return_value=0)
+        cleanup_patch.start()
+        self.addCleanup(cleanup_patch.stop)
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.service = FeaService(FeaStore(ServicePaths(root / 'fea.sqlite3', root / 'artifacts')))

@@ -63,7 +63,10 @@ class SimScaleTransportClient:
             raise SimScaleTransportError(
                 "SIMSCALE_NOT_CONFIGURED", "The SimScale API key is missing."
             )
-        self.project_id = self._uuid(project_id, "project")
+        # Projects use decimal string IDs; CAD/state/run identifiers are UUIDs.
+        if not isinstance(project_id, str) or not re.fullmatch(r'[0-9]{1,30}', project_id):
+            raise SimScaleTransportError('SIMSCALE_INVALID_IDENTIFIER', 'The SimScale project identifier must be a numeric string.')
+        self.project_id = project_id
         self.api_key = api_key
         self.opener = opener
         self.sleeper = sleeper

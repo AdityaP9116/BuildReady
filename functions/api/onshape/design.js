@@ -73,6 +73,7 @@ function collectVariables(node, found, depth = 0) {
     return found
   }
 
+  if (node.suppressed) return found
   if (Array.isArray(node.parameters)) {
     let name = null
     let expression = null
@@ -287,22 +288,13 @@ async function readDesign(env, context) {
   const microversionPath = workspaceOrVersion === 'w'
     ? `/api/v6/documents/d/${documentId}/w/${workspaceOrVersionId}/currentmicroversion`
     : `/api/v6/documents/d/${documentId}/versions?offset=0&limit=0`
-  const [features, metadata] = await Promise.all([
+  let [features, metadata] = await Promise.all([
     onshapeGet(`/api/v6/partstudios${scope}/features`, env),
     onshapeGet(`/api/v6/documents/${documentId}`, env),
   ])
   const microversionPayload = features?.microversionId
     ? null
     : await onshapeGet(microversionPath, env)
-
-  const variables = collectVariables(features?.features ?? features, [])
-  if (variables.length === 0) {
-    throw Object.assign(new Error('The configured Part Studio exposes no named variables.'), {
-      code: 'ONSHAPE_NO_VARIABLES',
-      httpStatus: 502,
-      retryable: false,
-    })
-  }
 
   const selectedVersion = workspaceOrVersion === 'v' && Array.isArray(microversionPayload)
     ? microversionPayload.find((version) => version?.id === workspaceOrVersionId)
@@ -316,6 +308,21 @@ async function readDesign(env, context) {
     })
   }
 
+  if (!features?.microversionId) {
+    features = await onshapeGet(`/api/v6/partstudios/d/${documentId}/m/${microversionId}/e/${elementId}/features`, env)
+    if ((features?.microversionId ?? microversionId) !== microversionId) {
+      throw Object.assign(new Error('The immutable feature read could not be verified.'), {
+        code: 'ONSHAPE_REVISION_UNVERIFIED', httpStatus: 502, retryable: false,
+      })
+    }
+  }
+  const variables = collectVariables(features?.features ?? features, [])
+  const nativeDimensions = collectNativeDimensions(features?.features)
+  if (variables.length === 0 && nativeDimensions.length === 0) {
+    throw Object.assign(new Error('No supported named or native dimension expressions were found.'), {
+      code: 'ONSHAPE_NO_VARIABLES', httpStatus: 502, retryable: false,
+    })
+  }
   return {
     ok: true,
     source: 'onshape-live',
@@ -338,6 +345,7 @@ async function readDesign(env, context) {
       ? features.serializationVersion
       : null,
     variables,
+    nativeDimensions,
     featureSummary: (Array.isArray(features?.features) ? features.features : [])
       .slice(0, 100)
       .map((feature) => ({
@@ -348,4 +356,22 @@ async function readDesign(env, context) {
       })),
     retrievedAt: new Date().toISOString(),
   }
+}
+
+function collectNativeDimensions(features) {
+  const found = []
+  for (const feature of (Array.isArray(features) ? features : []).slice(0, 100)) {
+    if (!feature || feature.suppressed || typeof feature.featureId !== 'string'
+      || !feature.featureId || feature.featureId.length > 64 || !Array.isArray(feature.parameters)) continue
+    const parameters = new Map(feature.parameters.filter((p) => p && typeof p.parameterId === 'string').map((p) => [p.parameterId, p]))
+    const parameterId = feature.featureType === 'extrude'
+      && parameters.get('bodyType')?.value === 'SOLID' && parameters.get('endBound')?.value === 'BLIND'
+      ? 'depth' : feature.featureType === 'fillet' ? 'radius' : null
+    const expression = parameters.get(parameterId)?.expression
+    if (!parameterId || typeof expression !== 'string' || !expression || expression.length > 64) continue
+    found.push({ featureId: feature.featureId, featureName: String(feature.name ?? 'Unnamed feature').slice(0, 80),
+      featureType: feature.featureType, parameterId, expression, semanticStatus: 'unassigned',
+      evidenceLevel: 'authored-parameter-not-measured-geometry' })
+  }
+  return found
 }

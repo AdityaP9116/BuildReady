@@ -11,6 +11,8 @@ bounded workflow steps without gaining approval or CAD-write authority. See
 
 ## Project status
 
+**2026-09-03 implementation handoff:** human manufacturing-input review and an opt-in local SimScale operator workspace are now included. They are not a verified end-to-end live demo. Read [unfinished work](docs/unfinished-work.md) and [the partner runbook](docs/partner-demo-runbook.md) before demonstrating; real runs, numerical acceptance, hosted embedding and unified live-result consumption remain outstanding.
+
 The current integration checkpoint adds design-context consistency fixes, recorded FEA reliability improvements, and a partial local private quotation workspace at `/sourcing.html`. Live SimScale numerical verification and actual supplier quotation acceptance are **not complete**. The user requires $0 spending; no paid execution or services are authorized. See [the current checkpoint and known limitations](planniing%20adn%20research/09-integration-implementation-checkpoint.md) before using the new evidence workflow.
 
 Gate 10 completes the local submission-readiness package. The feature-frozen application now has an official-form-aligned Devpost draft, sub-three-minute demo script, testing record, challenge-work history, attribution disclosure, and final external-action checklist. The public deployment, YouTube upload, participant-specific form answers, and final Devpost action remain deliberately unclaimed until verified.
