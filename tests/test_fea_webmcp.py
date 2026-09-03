@@ -65,15 +65,16 @@ class FeaWebMcpTests(unittest.TestCase):
         self.assertIn('"live": false', self.fixture)
         self.assertIn('"status": "not-verified-live"', self.fixture)
         self.assertIn('"outcome": "indeterminate"', self.fixture)
-        self.assertIn("usable = result.solver.live === true", self.state)
+        self.assertIn("feaState.applicability?.usableForEngineeringDisposition === true", self.state)
+        self.assertIn("result.solver.live === true", self.state)
         self.assertIn("{ minimumSafetyFactor: 'unknown', maximumDisplacement: 'unknown' }", self.state)
 
     def test_revision_change_marks_local_fea_evidence_stale(self) -> None:
         self.assertIn("window.addEventListener('buildready:statechange'", self.state)
         self.assertIn("currentness: 'STALE'", self.state)
-        self.assertIn("currentness: 'stale'", self.state)
-        self.assertIn("active-snapshot-changed", self.state)
-        self.assertIn("postActiveFeaSnapshot(snapshotKey)", self.state)
+        self.assertNotIn("feaState.result = { ...feaState.result, currentness:", self.state)
+        self.assertIn("source-applicability-changed", self.state)
+        self.assertIn("postActiveFeaSnapshot(candidateKey, previousSnapshotKey)", self.state)
         self.assertIn("'/api/fea/current-snapshot'", self.client)
         self.assertIn("FEA_CURRENT_SNAPSHOT_ENDPOINT", self.server)
 

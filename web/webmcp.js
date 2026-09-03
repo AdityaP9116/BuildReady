@@ -321,7 +321,8 @@ const compareSimulationRequirementsTool = emptyFeaTool(
 
 function simulationTools() {
   const tools = []
-  if (feaState.capabilities?.provider !== 'disabled') tools.push(prepareStaticStressStudyTool)
+  if (feaState.capabilities && feaState.capabilities.provider !== 'disabled'
+    && workflowState.designSource.sourceId !== 'onshape-live') tools.push(prepareStaticStressStudyTool)
   if (feaState.study) tools.push(getStaticStressStudyTool)
   if (feaState.study?.approval) tools.push(getSimulationStatusTool)
   if (feaState.study?.lifecycleState === 'COMPLETE') tools.push(getSimulationResultsTool)
@@ -330,6 +331,10 @@ function simulationTools() {
 }
 
 export function gate7Tools(route = '/design') {
+  if (workflowState.designSource.sourceId === 'onshape-live' && workflowState.sourceFreshness !== 'checked') {
+    return Object.freeze([designContextTool(), onshapeRevisionCheckTool,
+      ...(workflowState.pendingDesignSnapshot ? [onshapeRevisionActivationTool()] : [])])
+  }
   if (route === '/simulation') return simulationTools()
   if (route === '/onshape-panel' && workflowState.supplierQuotes.length === 2) {
     return workflowState.reviewPackage
@@ -364,7 +369,7 @@ export function gate7Tools(route = '/design') {
     && !workflowState.proposedChange) {
     tools.push(radiusPreviewTool())
   }
-  if (workflowState.inspectionStatus === 'complete'
+  if (route !== '/onshape-panel' && workflowState.inspectionStatus === 'complete'
     && ['approved', 'rejected'].includes(workflowState.decisionStatus)
     && workflowState.simulationEvidence?.lifecycleState === 'COMPLETE'
     && workflowState.simulationEvidence?.currentness === 'CURRENT'

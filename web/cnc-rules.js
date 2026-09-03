@@ -79,11 +79,17 @@ export function evaluateRule(rule, feature, fixture) {
     observedMeasurements: Object.freeze(result.observedMeasurements),
     threshold: Object.freeze(result.threshold),
     calculation: result.explanation,
-    consequence: rule.consequence,
-    recommendation: rule.recommendation,
+    consequence: feature.inputReviewStatus === 'inferred-unreviewed'
+      ? `Inferred measurements (${result.explanation}) exceed this demonstration rule's limits. Material, geometry and manufacturing applicability require human review; this is not a measured tool-access or production conclusion.`
+      : rule.consequence,
+    recommendation: feature.inputReviewStatus === 'inferred-unreviewed'
+      ? `Demonstration guidance, subject to input and applicability review: ${rule.recommendation}`
+      : rule.recommendation,
     confidence: 'deterministic',
+    inputReviewStatus: feature.inputReviewStatus ?? 'controlled-fixture',
+    measurementProvenance: feature.measurementProvenance ?? null,
     evidenceReferences: Object.freeze([
-      feature.evidenceReference ?? rule.evidenceReferences[0],
+      ...(feature.evidenceReferences ?? [feature.evidenceReference ?? rule.evidenceReferences[0]]),
       ...rule.evidenceReferences.slice(1),
     ]),
     highlightIds: Object.freeze([...feature.highlightIds]),
@@ -154,7 +160,7 @@ export function evaluateCncManufacturability(fixture, { severity = 'all' } = {})
 
   return Object.freeze({
     inspectionId: `inspection-${fixture.designId}-${fixture.revisionId}-${RULE_SET_VERSION}`,
-    revisionPrecondition: `${fixture.designId}/${fixture.revisionId}@${fixture.fixtureVersion}`,
+    revisionPrecondition: fixture.sourceSnapshotKey ?? `${fixture.designId}/${fixture.revisionId}@${fixture.fixtureVersion}`,
     ruleSetVersion: RULE_SET_VERSION,
     requestedSeverity: severity,
     coverage: Object.freeze({
@@ -191,6 +197,9 @@ export function compactInspectionResult(inspection, generatedAt) {
         value: finding.threshold.value,
       },
       evidenceRef: finding.evidenceReferences[0],
+      evidenceReferences: finding.evidenceReferences,
+      inputReviewStatus: finding.inputReviewStatus,
+      measurementProvenance: finding.measurementProvenance,
     })),
   }
 }

@@ -1,0 +1,10 @@
+.sourcing-workspace { max-width: 1100px; margin: 2rem auto; padding: 1rem; }
+.sourcing-workspace .proposal-card { margin: 1.5rem 0; padding: 1.5rem; }
+.sourcing-workspace label { display: block; margin: .7rem 0; }
+.sourcing-workspace input:not([type="checkbox"]), .sourcing-workspace select, .sourcing-workspace textarea { display: block; width: 100%; padding: .6rem; border: 1px solid #8a9aa5; border-radius: .4rem; background: white; color: #172a35; }
+.sourcing-workspace input[type="checkbox"] { margin-right: .5rem; }
+.sourcing-workspace button { margin: .4rem .5rem .4rem 0; }
+.sourcing-workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; }
+.sourcing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+.source-reference { border-top: 1px solid #cad4db; padding: .6rem 0; }
+.sourcing-workspace [hidden] { display: none !important; }

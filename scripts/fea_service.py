@@ -32,7 +32,7 @@ def utc_iso(timestamp: float) -> str:
 
 
 def canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
 
 
 def sha256_value(value: Any) -> str:
@@ -62,10 +62,15 @@ class FeaStore:
         self.paths.database.parent.mkdir(parents=True, exist_ok=True)
         self.paths.artifacts.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._transaction = threading.local()
         self._initialize()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
+        existing = getattr(self._transaction, "connection", None)
+        if existing is not None:
+            yield existing
+            return
         connection = sqlite3.connect(self.paths.database)
         connection.row_factory = sqlite3.Row
         try:
@@ -76,6 +81,17 @@ class FeaStore:
             raise
         finally:
             connection.close()
+
+    @contextmanager
+    def atomic(self) -> Iterator[None]:
+        """Serialize read/modify/write across threads AND separate store instances."""
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._transaction.connection = connection
+            try:
+                yield
+            finally:
+                del self._transaction.connection
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -151,6 +167,8 @@ class FeaStore:
             ).fetchone()
             if row is None:
                 raise FeaServiceError("FEA_STUDY_NOT_FOUND", "The requested FEA study does not exist.", 404)
+            if row["currentness"] != "CURRENT":
+                raise FeaServiceError("FEA_STALE_APPROVAL", "The frozen study is stale.", 409)
             if row["approval_json"]:
                 return self._public_record(row)
             connection.execute(
@@ -182,14 +200,14 @@ class FeaStore:
             )
         return self.get_study(study_id)
 
-    def mark_other_snapshots_stale(self, active_snapshot_key: str, now: float) -> int:
+    def mark_snapshot_stale(self, previous_snapshot_key: str, now: float) -> int:
         with self._lock, self._connect() as connection:
             cursor = connection.execute(
                 """
                 UPDATE fea_studies SET currentness = 'STALE', updated_at = ?
-                WHERE snapshot_key <> ? AND currentness = 'CURRENT'
+                WHERE snapshot_key = ? AND currentness = 'CURRENT'
                 """,
-                (now, active_snapshot_key),
+                (now, previous_snapshot_key),
             )
             return cursor.rowcount
 
@@ -204,15 +222,20 @@ class FeaStore:
     ) -> dict[str, Any]:
         digest = hashlib.sha256(content).hexdigest()
         artifact_id = f"artifact-{digest[:16]}"
-        relative = Path(study_id) / run_id / f"{kind}.json"
+        relative = Path(study_id) / run_id / digest / f"{kind}.json"
         destination = self.paths.artifacts / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(content)
+        try:
+            with destination.open("xb") as handle:
+                handle.write(content)
+        except FileExistsError:
+            if destination.read_bytes() != content:
+                raise FeaServiceError("FEA_ARTIFACT_CONFLICT", "Stored evidence failed its fingerprint check.", 409)
         expires_at = now + retention_days * 86400
         with self._lock, self._connect() as connection:
             connection.execute(
                 """
-                INSERT OR REPLACE INTO artifacts (
+                INSERT OR IGNORE INTO artifacts (
                   artifact_id, study_id, kind, storage_path, sha256, byte_size,
                   created_at, expires_at, deleted_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
@@ -239,8 +262,9 @@ class FeaStore:
             ).fetchall()
             for row in rows:
                 path = (self.paths.artifacts / row["storage_path"]).resolve()
-                if self.paths.artifacts.resolve() in path.parents:
-                    path.unlink(missing_ok=True)
+                if self.paths.artifacts.resolve() not in path.parents:
+                    raise FeaServiceError("FEA_UNSAFE_ARTIFACT_PATH", "Cleanup refused a path outside private artifact storage.", 500)
+                path.unlink(missing_ok=True)
                 connection.execute(
                     "UPDATE artifacts SET deleted_at = ? WHERE artifact_id = ?",
                     (now, row["artifact_id"]),
@@ -305,11 +329,24 @@ class FeaService:
 
     def create_study(self, manifest: dict[str, Any]) -> dict[str, Any]:
         self._validate_manifest(manifest)
+        with self.store.atomic():
+            return self._create_study(manifest)
+
+    def prepare_study(self, unsigned: dict[str, Any]) -> dict[str, Any]:
+        """Server-authoritative fingerprint; clients must display the returned manifest."""
+        if not isinstance(unsigned, dict) or "studyHash" in unsigned:
+            raise FeaServiceError("FEA_INVALID_MANIFEST", "Preparation requires an unsigned study manifest.")
+        try:
+            study_hash = sha256_value(unsigned)
+        except (ValueError, TypeError) as error:
+            raise FeaServiceError("FEA_INVALID_MANIFEST", "Manifest values must be finite JSON data.") from error
+        return self.create_study({**unsigned, "studyHash": study_hash})
+
+    def _create_study(self, manifest: dict[str, Any]) -> dict[str, Any]:
         existing = self.store.get_by_hash(manifest["studyHash"])
         if existing:
             return {"ok": True, "created": False, "study": existing}
         now = self.clock()
-        self.store.mark_other_snapshots_stale(manifest["snapshotKey"], now)
         study_id = f"study-{manifest['studyHash'][7:23]}"
         record = self.store.put_study(
             {
@@ -326,6 +363,10 @@ class FeaService:
         return {"ok": True, "created": True, "study": record}
 
     def approve_and_submit(self, study_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with self.store.atomic():
+            return self._approve_and_submit(study_id, payload)
+
+    def _approve_and_submit(self, study_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if self.provider == "disabled":
             raise FeaServiceError("FEA_PROVIDER_DISABLED", "The FEA provider is disabled.", 503)
         required = {"expectedSnapshotKey", "studyHash", "cadSharingAcknowledged", "computeAcknowledged"}
@@ -367,17 +408,30 @@ class FeaService:
         study = self._advance_recorded(self.store.get_study(study_id))
         if study["lifecycleState"] != "COMPLETE" or not study["result"]:
             raise FeaServiceError("FEA_RESULT_NOT_READY", "The FEA result is not ready.", 409, True)
-        return {"ok": True, "result": study["result"]}
+        return {
+            "ok": True, "result": study["result"], "study": study,
+            "applicability": {
+                "currentness": study["currentness"],
+                "snapshotKey": study["snapshotKey"],
+                "usableForEngineeringDisposition": False,
+            },
+        }
 
-    def mark_snapshot_current(self, active_snapshot_key: str) -> int:
-        return self.store.mark_other_snapshots_stale(active_snapshot_key, self.clock())
+    def mark_snapshot_current(self, active_snapshot_key: str, *, previous_snapshot_key: str) -> int:
+        if active_snapshot_key == previous_snapshot_key:
+            return 0
+        return self.store.mark_snapshot_stale(previous_snapshot_key, self.clock())
 
     def _advance_recorded(self, study: dict[str, Any]) -> dict[str, Any]:
+        with self.store.atomic():
+            return self._advance_recorded_locked(self.store.get_study(study["studyId"]))
+
+    def _advance_recorded_locked(self, study: dict[str, Any]) -> dict[str, Any]:
         if self.provider != "recorded" or study["lifecycleState"] in TERMINAL_STATES or not study["approval"]:
             return study
         now = self.clock()
         approved_at = datetime.fromisoformat(study["approvedAt"].replace("Z", "+00:00")).timestamp()
-        elapsed = now - approved_at
+        elapsed = max(0, now - approved_at)
         next_state = next(state for minimum, state in reversed(RECORDED_TIMELINE) if elapsed >= minimum)
         result = None
         if next_state == "COMPLETE":
@@ -424,7 +478,11 @@ class FeaService:
         if manifest["templateVersion"] != self.domain["template"]["templateVersion"]:
             raise FeaServiceError("FEA_INVALID_MANIFEST", "The template version is not supported.")
         unsigned = {key: value for key, value in manifest.items() if key != "studyHash"}
-        if manifest["studyHash"] != sha256_value(unsigned):
+        try:
+            expected_hash = sha256_value(unsigned)
+        except (ValueError, TypeError) as error:
+            raise FeaServiceError("FEA_INVALID_MANIFEST", "Manifest values must be finite JSON data.") from error
+        if manifest["studyHash"] != expected_hash:
             raise FeaServiceError("FEA_HASH_MISMATCH", "The study hash does not match its canonical manifest.")
         if manifest["selections"] != self.domain["selectionContract"]:
             raise FeaServiceError("FEA_INVALID_SELECTION", "The required saved selections are not exact.")
@@ -440,7 +498,7 @@ class FeaService:
         }:
             raise FeaServiceError("FEA_INVALID_MATERIAL", "The controlled material shape is invalid.")
         material_key = material["materialKey"]
-        if material_key not in expected_materials or material != {
+        if not isinstance(material_key, str) or material_key not in expected_materials or material != {
             "materialKey": material_key, **expected_materials[material_key]
         }:
             raise FeaServiceError("FEA_INVALID_MATERIAL", "The controlled material properties are not exact.")
@@ -476,7 +534,7 @@ class FeaService:
 
         mesh = manifest["mesh"]
         preset = mesh.get("preset") if isinstance(mesh, dict) else None
-        if preset not in self.domain["meshPresets"] or mesh != {
+        if not isinstance(preset, str) or preset not in self.domain["meshPresets"] or mesh != {
             "preset": preset, **self.domain["meshPresets"][preset]
         }:
             raise FeaServiceError("FEA_INVALID_MESH", "The controlled mesh preset is not exact.")

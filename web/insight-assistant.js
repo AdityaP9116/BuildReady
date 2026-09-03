@@ -1,5 +1,6 @@
 import {
   activeDesign,
+  activeSnapshotKey,
   gate7Handlers,
   workflowState,
 } from './state.js?v=20260903-1'
@@ -15,7 +16,7 @@ import { toolErrorEnvelope } from './error-contract.js?v=20260903-1'
 const MAX_MESSAGES = 40
 // Version persisted conversations so a deployment never restores answers made
 // under an older completeness or wording contract.
-const TRANSCRIPT_SCHEMA_VERSION = '2'
+const TRANSCRIPT_SCHEMA_VERSION = '3'
 const STORAGE_PREFIX = `buildready:model-insight:v${TRANSCRIPT_SCHEMA_VERSION}:`
 
 function memoryStorage() {
@@ -49,9 +50,7 @@ function snapshot() {
 }
 
 function contextKey() {
-  const design = activeDesign()
-  const revision = workflowState.designSource.provenance?.microversionId ?? design.revisionId
-  return `${STORAGE_PREFIX}${design.designId}:${revision}`
+  return `${STORAGE_PREFIX}${activeSnapshotKey()}:${workflowState.sourceFreshness}`
 }
 
 function message(role, text, extra = {}) {
@@ -148,6 +147,7 @@ export class ModelInsightAssistant {
 
   clear() {
     this.abortController?.abort()
+    this.abortController = null
     this.busy = false
     this.messages = [welcomeMessage()]
     this.persist()
@@ -171,6 +171,8 @@ export class ModelInsightAssistant {
       schemaVersion: '1.0.0',
       design: { designId: design.designId, revisionId: design.revisionId, name: design.name },
       microversionId: workflowState.designSource.provenance?.microversionId ?? null,
+      snapshotKey: activeSnapshotKey(),
+      sourceFreshness: workflowState.sourceFreshness,
       exportedAt: new Date().toISOString(),
       messages: this.messages,
       disclaimer: 'Demonstration DFM guidance only; not production manufacturing approval.',
@@ -191,6 +193,7 @@ export class ModelInsightAssistant {
       this.allowContextTransition = true
       try {
         await this.runTool('load_onshape_design', {}, signal)
+        this.syncContext()
       } finally {
         this.allowContextTransition = false
       }
@@ -247,10 +250,13 @@ export class ModelInsightAssistant {
     const initialContext = this.context
     this.busy = true
     this.abortController = new AbortController()
+    const controller = this.abortController
 
     try {
-      await this.prepareIntent(intent, this.abortController.signal)
+      await this.prepareIntent(intent, controller.signal)
+      if (controller.signal.aborted || this.abortController !== controller) return null
       this.syncContext()
+      if (controller.signal.aborted || this.abortController !== controller) return null
       if (userMessage && this.context !== initialContext
         && !this.messages.some((item) => item.messageId === userMessage.messageId)) {
         this.add(userMessage)
@@ -260,6 +266,7 @@ export class ModelInsightAssistant {
       this.add(assistantMessage)
       return assistantMessage
     } catch (error) {
+      if (this.abortController !== controller || this.context !== initialContext) return null
       if (error?.name === 'AbortError') {
         const stopped = message('assistant', 'The request was stopped. No additional workflow action was taken.', { intent: 'stopped' })
         this.add(stopped)
@@ -274,8 +281,10 @@ export class ModelInsightAssistant {
       this.add(failed)
       return failed
     } finally {
-      this.busy = false
-      this.abortController = null
+      if (this.abortController === controller) {
+        this.busy = false
+        this.abortController = null
+      }
     }
   }
 }

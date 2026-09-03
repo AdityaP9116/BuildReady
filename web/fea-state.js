@@ -1,12 +1,14 @@
 import {
   activeDesignSource,
   activeSnapshotKey,
+  assertActiveSourceUsable,
   appendAuditEvent,
   recordToolCall,
   setSimulationEvidence,
+  workflowState,
 } from './state.js?v=20260903-1'
 import { FEA_DOMAIN } from './fea-domain.js?v=20260903-1'
-import { createStudyManifest } from './fea-validation.js?v=20260903-1'
+import { validateStaticStressStudy } from './fea-validation.js?v=20260903-1'
 import {
   approveFeaStudy,
   getFeaCapabilities,
@@ -14,7 +16,7 @@ import {
   getFeaStatus,
   getFeaStudy,
   postActiveFeaSnapshot,
-  postFeaStudy,
+  prepareFeaStudy,
 } from './fea-client.js?v=20260903-1'
 
 export const feaState = {
@@ -24,9 +26,28 @@ export const feaState = {
   lastError: null,
   initialized: false,
   trackedSnapshotKey: activeSnapshotKey(),
+  trackedFreshness: workflowState.sourceFreshness,
+  applicability: null,
 }
 
 let capabilitiesPromise = null
+let requestGeneration = 0
+
+function beginRequest() {
+  const generation = ++requestGeneration
+  const snapshotKey = activeSnapshotKey()
+  return (signal) => {
+    if (signal?.aborted || generation !== requestGeneration || snapshotKey !== activeSnapshotKey()) {
+      throw new Error('FEA_STALE_RESPONSE: the source or request changed; this response was not activated.')
+    }
+  }
+}
+
+function effectiveCurrentness(study) {
+  if (study.snapshotKey !== activeSnapshotKey()) return 'STALE'
+  if (activeDesignSource().sourceId === 'onshape-live' && workflowState.sourceFreshness !== 'checked') return 'UNRESOLVED'
+  return study.currentness
+}
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value))
@@ -45,7 +66,7 @@ function publishSimulationEvidence() {
     studyHash: study.studyHash,
     snapshotKey: study.snapshotKey,
     lifecycleState: study.lifecycleState,
-    currentness: study.currentness,
+    currentness: effectiveCurrentness(study),
     provider: feaState.capabilities?.provider ?? 'unknown',
     live: feaState.capabilities?.live === true,
     approvedAt: study.approvedAt,
@@ -72,7 +93,8 @@ function compactStudy(study) {
     studyHash: study.studyHash,
     snapshotKey: study.snapshotKey,
     lifecycleState: study.lifecycleState,
-    currentness: study.currentness,
+    currentness: effectiveCurrentness(study),
+    manifest: clone(study.manifest),
     provider: feaState.capabilities?.provider ?? 'unknown',
     approvalRequired: !study.approval,
     nextAction: study.approval
@@ -101,7 +123,13 @@ export async function initializeFea(signal) {
 }
 
 export async function prepareStaticStressStudy(input, { signal } = {}) {
+  assertActiveSourceUsable()
+  if (activeDesignSource().sourceId === 'onshape-live') {
+    throw new Error('FEA_LIVE_SETUP_REQUIRED: a frozen CAD export, reviewed material and resolved geometry selections are required. Demo study defaults cannot be applied to a live Part Studio.')
+  }
+  const accept = beginRequest()
   await initializeFea(signal)
+  accept(signal)
   const allowed = ['forceN', 'direction', 'meshPreset', 'minimumSafetyFactor', 'maximumDisplacementMm']
   if (!input || typeof input !== 'object' || Array.isArray(input)
     || Object.keys(input).some((key) => !allowed.includes(key))
@@ -111,7 +139,7 @@ export async function prepareStaticStressStudy(input, { signal } = {}) {
   if (feaState.capabilities.provider === 'disabled') {
     throw new Error('FEA_PROVIDER_DISABLED: the FEA provider is disabled.')
   }
-  const manifest = await createStudyManifest({
+  const manifest = validateStaticStressStudy({
     snapshotKey: activeSnapshotKey(),
     materialKey: 'al-6061-t6-demo',
     load: { type: 'force', magnitude: input.forceN, unit: 'N', direction: input.direction },
@@ -122,9 +150,11 @@ export async function prepareStaticStressStudy(input, { signal } = {}) {
       maximumDisplacementMm: input.maximumDisplacementMm,
     },
   }, FEA_DOMAIN, activeSnapshotKey())
-  const response = await postFeaStudy(manifest, signal)
+  const response = await prepareFeaStudy(manifest, signal)
+  accept(signal)
   feaState.study = response.study
   feaState.result = response.study.result
+  feaState.applicability = null
   feaState.lastError = null
   publishSimulationEvidence()
   recordToolCall('prepare_static_stress_study', 'completed', `Prepared ${response.study.studyId} for ${response.study.snapshotKey}.`)
@@ -135,7 +165,9 @@ export async function prepareStaticStressStudy(input, { signal } = {}) {
 export async function readStaticStressStudy(input, { signal } = {}) {
   emptyObject(input)
   if (!feaState.study) throw new Error('FEA_STUDY_REQUIRED: prepare a static stress study first.')
+  const accept = beginRequest()
   const response = await getFeaStudy(feaState.study.studyId, signal)
+  accept(signal)
   feaState.study = response.study
   feaState.result = response.study.result
   publishSimulationEvidence()
@@ -145,13 +177,17 @@ export async function readStaticStressStudy(input, { signal } = {}) {
 }
 
 export async function approveAndSubmitHuman({ cadSharingAcknowledged, computeAcknowledged }, { signal } = {}) {
+  assertActiveSourceUsable()
   if (!feaState.study) throw new Error('FEA_STUDY_REQUIRED: prepare a static stress study first.')
+  if (effectiveCurrentness(feaState.study) !== 'CURRENT') throw new Error('FEA_STALE_APPROVAL: prepare a current study before approval.')
+  const accept = beginRequest()
   const response = await approveFeaStudy(feaState.study.studyId, {
     expectedSnapshotKey: feaState.study.snapshotKey,
     studyHash: feaState.study.studyHash,
     cadSharingAcknowledged,
     computeAcknowledged,
   }, signal)
+  accept(signal)
   feaState.study = response.study
   publishSimulationEvidence()
   appendAuditEvent('human', 'approve_and_submit_static_stress_study', 'completed', `Human approved ${response.study.studyId}; provider ${feaState.capabilities.provider}.`)
@@ -162,7 +198,9 @@ export async function approveAndSubmitHuman({ cadSharingAcknowledged, computeAck
 export async function readSimulationStatus(input, { signal } = {}) {
   emptyObject(input)
   if (!feaState.study?.approval) throw new Error('FEA_APPROVAL_REQUIRED: the visible human approval is required first.')
+  const accept = beginRequest()
   const response = await getFeaStatus(feaState.study.studyId, signal)
+  accept(signal)
   feaState.study = response.study
   feaState.result = response.study.result
   publishSimulationEvidence()
@@ -174,8 +212,12 @@ export async function readSimulationStatus(input, { signal } = {}) {
 export async function readSimulationResults(input, { signal } = {}) {
   emptyObject(input)
   if (!feaState.study) throw new Error('FEA_STUDY_REQUIRED: prepare a static stress study first.')
+  const accept = beginRequest()
   const response = await getFeaResults(feaState.study.studyId, signal)
+  accept(signal)
+  feaState.study = response.study
   feaState.result = response.result
+  feaState.applicability = response.applicability
   publishSimulationEvidence()
   recordToolCall('get_simulation_results', 'completed', `Read result ${response.result.runId}.`)
   emitFeaChange('results-loaded')
@@ -185,10 +227,11 @@ export async function readSimulationResults(input, { signal } = {}) {
     provider: response.result.solver.provider,
     live: response.result.solver.live,
     verificationStatus: response.result.verification.status,
+    currentness: effectiveCurrentness(response.study),
     assessment: response.result.assessment,
     metrics: response.result.metrics,
     nextAction: response.result.solver.live
-      ? 'Compare the verified result with the approved requirements.'
+      ? 'Review currentness, numerical verification and applicability before comparing requirements.'
       : 'Recorded mode is workflow evidence only; do not make an engineering disposition.',
   }
 }
@@ -197,7 +240,19 @@ export async function compareSimulationToRequirements(input) {
   emptyObject(input)
   if (!feaState.result) throw new Error('FEA_RESULT_REQUIRED: load a completed result first.')
   const result = feaState.result
-  const usable = result.solver.live === true && result.verification.status === 'verified-live'
+  const usable = feaState.applicability?.usableForEngineeringDisposition === true
+    && feaState.applicability.snapshotKey === activeSnapshotKey()
+    && effectiveCurrentness(feaState.study) === 'CURRENT'
+    && feaState.study.lifecycleState === 'COMPLETE'
+    && result.studyId === feaState.study.studyId
+    && result.inputs?.studyHash === feaState.study.studyHash
+    && result.source?.snapshotKey === activeSnapshotKey()
+    && result.solver.live === true && result.verification.status === 'verified-live'
+    && Number.isFinite(result.metrics.estimatedFactorOfSafety.value)
+    && result.metrics.estimatedFactorOfSafety.value >= 0
+    && result.metrics.maximumDisplacement.unit === 'mm'
+    && Number.isFinite(result.metrics.maximumDisplacement.value)
+    && result.metrics.maximumDisplacement.value >= 0
   const comparison = usable
     ? {
       minimumSafetyFactor: result.metrics.estimatedFactorOfSafety.value >= feaState.study.manifest.requirements.minimumSafetyFactor ? 'pass' : 'fail',
@@ -223,25 +278,34 @@ export const feaHandlers = Object.freeze({
 })
 
 export function resetFeaState() {
+  requestGeneration += 1
   feaState.study = null
   feaState.result = null
+  feaState.applicability = null
   feaState.lastError = null
   feaState.trackedSnapshotKey = activeSnapshotKey()
+  feaState.trackedFreshness = workflowState.sourceFreshness
   publishSimulationEvidence()
   emitFeaChange('reset')
 }
 
 window.addEventListener('buildready:statechange', () => {
   const snapshotKey = activeSnapshotKey()
-  if (snapshotKey === feaState.trackedSnapshotKey) return
+  const freshness = workflowState.sourceFreshness
+  if (snapshotKey === feaState.trackedSnapshotKey && freshness === feaState.trackedFreshness) return
+  const previousSnapshotKey = feaState.trackedSnapshotKey
+  requestGeneration += 1
   feaState.trackedSnapshotKey = snapshotKey
-  if (feaState.study && feaState.study.snapshotKey !== snapshotKey && feaState.study.currentness !== 'STALE') {
+  feaState.trackedFreshness = freshness
+  feaState.applicability = null
+  if (feaState.study && (feaState.study.snapshotKey !== snapshotKey || freshness === 'changed')) {
     feaState.study = { ...feaState.study, currentness: 'STALE' }
-    if (feaState.result) feaState.result = { ...feaState.result, currentness: 'stale' }
-    publishSimulationEvidence()
-    emitFeaChange('active-snapshot-changed')
   }
-  void postActiveFeaSnapshot(snapshotKey).catch((error) => {
+  publishSimulationEvidence()
+  emitFeaChange('source-applicability-changed')
+  const candidateKey = workflowState.pendingDesignSnapshot?.snapshotKey ?? snapshotKey
+  if (candidateKey === previousSnapshotKey) return
+  void postActiveFeaSnapshot(candidateKey, previousSnapshotKey).catch((error) => {
     feaState.lastError = error
     emitFeaChange('snapshot-invalidation-failed')
   })

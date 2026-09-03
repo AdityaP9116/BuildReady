@@ -49,7 +49,7 @@ class ProposalPolicyTests(unittest.TestCase):
         self.assertNotIn("approve_proposal", webmcp)
         self.assertNotIn("reject_proposal", webmcp)
         self.assertIn("actor: 'human'", state)
-        self.assertIn("revision B remains unchanged", state)
+        self.assertIn("loaded revision ${activeDesign().revisionId} remains unchanged", state)
 
 
 if __name__ == "__main__":

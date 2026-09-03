@@ -134,7 +134,7 @@ class ModuleResolutionTests(unittest.TestCase):
         "URL", "URLSearchParams", "Blob", "File", "FormData", "Headers",
         "Request", "Response", "Array", "Object", "Function", "Proxy",
         "Int8Array", "Uint8Array", "Float32Array", "Float64Array", "TextEncoder",
-        "TextDecoder", "Intl", "Number", "String", "Boolean", "Image",
+        "TextDecoder", "Intl", "Number", "String", "Boolean", "Image", "Option",
         "ResizeObserver", "IntersectionObserver", "MutationObserver",
     }
 

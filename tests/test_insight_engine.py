@@ -19,7 +19,7 @@ const result = {expression}
 process.stdout.write(JSON.stringify(result))
 """
     result = subprocess.run(
-        ["node", "--experimental-default-type=module", "--input-type=module", "-e", program],
+        ["node", "--input-type=module", "-e", program],
         cwd=ROOT,
         input=json.dumps(payload),
         text=True,
@@ -155,7 +155,7 @@ class GroundedResponseTests(unittest.TestCase):
 class AssistantPipelineTests(unittest.TestCase):
     def test_old_unversioned_transcript_is_not_restored(self) -> None:
         source = (ROOT / "web" / "insight-assistant.js").read_text(encoding="utf-8")
-        self.assertIn("TRANSCRIPT_SCHEMA_VERSION = '2'", source)
+        self.assertIn("TRANSCRIPT_SCHEMA_VERSION = '3'", source)
         self.assertIn("parsed?.schemaVersion !== TRANSCRIPT_SCHEMA_VERSION", source)
         self.assertIn("messages: this.messages.slice(-MAX_MESSAGES)", source)
 
@@ -197,7 +197,7 @@ process.stdout.write(JSON.stringify({
 }))
 """
         result = subprocess.run(
-            ["node", "--experimental-default-type=module", "--input-type=module"],
+            ["node", "--input-type=module"],
             cwd=ROOT,
             input=program,
             text=True,

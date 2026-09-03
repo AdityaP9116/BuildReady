@@ -18,6 +18,8 @@ SNAPSHOT = FrozenPartStudio(
     document_id="000000000000000000000001",
     element_id="000000000000000000000002",
     microversion_id="000000000000000000000003",
+    version_id="000000000000000000000004",
+    part_id="part-test",
 )
 STEP = b"ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n"
 
@@ -42,6 +44,7 @@ class OnshapeExportTests(unittest.TestCase):
         requests: list[Any] = []
         responses = iter(
             [
+                FakeResponse({'id': SNAPSHOT.version_id, 'microversion': SNAPSHOT.microversion_id}),
                 FakeResponse({"id": "translation00000001", "requestState": "ACTIVE"}),
                 FakeResponse(
                     {
@@ -65,12 +68,13 @@ class OnshapeExportTests(unittest.TestCase):
         result = client.export_step(SNAPSHOT, poll_attempts=2)
 
         self.assertIn(
-            "/d/000000000000000000000001/m/000000000000000000000003/",
-            requests[0].full_url,
+            "/d/000000000000000000000001/v/000000000000000000000004/",
+            requests[1].full_url,
         )
         self.assertNotIn("/w/", requests[0].full_url)
-        self.assertEqual("POST", requests[0].get_method())
-        self.assertEqual("GET", requests[1].get_method())
+        self.assertEqual("GET", requests[0].get_method())
+        self.assertEqual("POST", requests[1].get_method())
+        self.assertEqual('part-test', json.loads(requests[1].data)['partIds'])
         self.assertEqual("GET", requests[2].get_method())
         self.assertEqual(STEP, result.content)
         self.assertEqual(f"sha256-{hashlib.sha256(STEP).hexdigest()}", result.sha256)
@@ -95,6 +99,7 @@ class OnshapeExportTests(unittest.TestCase):
     def test_failed_translation_is_sanitized_and_not_downloaded(self) -> None:
         responses = iter(
             [
+                FakeResponse({'id': SNAPSHOT.version_id, 'microversion': SNAPSHOT.microversion_id}),
                 FakeResponse({"id": "translation00000001", "requestState": "ACTIVE"}),
                 FakeResponse(
                     {
@@ -121,7 +126,7 @@ class OnshapeExportTests(unittest.TestCase):
         }
         for artifact, expected in ((b"<html>error</html>", "ONSHAPE_EXPORT_INVALID_STEP"), (STEP, "ONSHAPE_EXPORT_TOO_LARGE")):
             with self.subTest(expected=expected):
-                responses = iter([FakeResponse(metadata), FakeResponse(artifact, content_type="application/octet-stream")])
+                responses = iter([FakeResponse({'id': SNAPSHOT.version_id, 'microversion': SNAPSHOT.microversion_id}), FakeResponse(metadata), FakeResponse(artifact, content_type="application/octet-stream")])
                 client = OnshapeExportClient(
                     access_key="a",
                     secret_key="b",

@@ -62,12 +62,15 @@ function packageSource(source) {
     provenance: Object.freeze({
       documentId: provenance.documentId,
       workspaceId: provenance.workspaceId,
+      versionId: provenance.versionId ?? null,
+      sourceSnapshotKey: provenance.sourceSnapshotKey ?? null,
       elementId: provenance.elementId,
       documentName: provenance.documentName,
       documentHref: provenance.documentHref,
       microversionId: provenance.microversionId,
       retrievedAt: provenance.retrievedAt,
       measurementCount: provenance.measurementCount,
+      discovery: provenance.discovery ?? null,
     }),
   })
 }
@@ -117,6 +120,7 @@ export function createReviewPackage({ fixture, source, snapshotKey, inspection, 
       ruleSetScope: RULE_SET_SCOPE,
       findingCount: findings.length,
       counts: inspection.counts,
+      coverage: inspection.coverage ?? null,
       findings: findings.map((finding) => ({ ...finding })),
       evidenceReferences,
     }),

@@ -1,6 +1,6 @@
 # DatumFlow — SimScale FEA Stress-Simulation Integration Plan
 
-> **Status:** Approved implementation plan; credential-free gates may proceed while live SimScale remains blocked on Gate FEA-0 account verification
+> **Status:** Original approved scope and design history. The authorized [combined implementation plan, sections 17–22](./08-datumflow-supplier-quotes-implementation-plan.md#17-feasimscale-gap-register-and-completion-boundaries) details the corrections and remaining FEA work. Live SimScale is not implemented or numerically verified at the current baseline.
 >
 > **Product naming:** DatumFlow is the intended product name; the current repository and code still use BuildReady. Renaming the codebase is not required to implement this integration.
 >
@@ -8,17 +8,21 @@
 
 ## Implementation status (2026-09-02)
 
+This corrected inventory distinguishes existing scaffolding from proven completion. Use gates **F0–F6 in document 08** for the next execution sequence, including two-stage transfer/solve approval and controlled live commissioning before numerical verification. The historical FEA-0–FEA-6 sections below retain earlier design intent; they do not supersede that corrected sequence or authorize live operations. Document 08 also proposes clarifying the seven-day expiry clock; the duration is unchanged, but the start point must be confirmed before live transfer.
+
+**Priority revision:** document 08 revision 3 records authorized implementation, starting with stabilization against partner baseline `4903386`. Initial local FEA reliability and source-context fixes are described in [checkpoint 09](./09-integration-implementation-checkpoint.md); they do not complete live SimScale or numerical verification. The top-level workspace remains the initial delivery surface, with expanded embedding and hosting separate.
+
 | Gate | Implemented evidence | Remaining exit condition |
 | --- | --- | --- |
-| FEA-0 | Read-only, secret-safe account probe and setup checklist | Real API key/account check, manual baseline, supported result resources, and analytical cantilever verification |
-| FEA-1 | Exact-microversion STEP export plus SimScale storage/upload/import/topology/selection clients; mock contract tests | Execute against the approved accounts and transfer one real frozen demo revision |
+| FEA-0 | Read-only account probe and setup checklist | Real account/project/solver/result-access feasibility; numerical verification occurs after the controlled live path exists |
+| FEA-1 | Isolated Onshape STEP and SimScale storage/upload/import/topology/selection clients with mock tests | Correct the unverified Onshape `/m/` translation assumption, harden redirects, prove immutable-version export and real approved import |
 | FEA-2 | Versioned bounded material/load/mesh/selection manifest and deterministic validator | Capture and freeze the account's current, manually verified SimScale static-analysis payload and prove named-selection mapping |
-| FEA-3 | Durable local study/approval records, human-only visible consent, idempotent recorded submission, stale-revision handling | Move live records to the selected authenticated database/object-storage deployment |
-| FEA-4 | Recorded asynchronous state machine and browser reload behavior | Create, read back, start, and monitor a real SimScale run |
-| FEA-5 | Immutable hashed recorded result, deterministic unknown outcome, state-scoped WebMCP tools, and review-package propagation | Retrieve and normalize verified live numeric results and deep links |
-| FEA-6 | Labeled recorded fallback, automated tests, browser walkthrough, and submission documentation | Re-run the full hardening suite after the live provider is enabled |
+| FEA-3 | Local SQLite study records and visible recorded consent scaffolding | Authenticated full-manifest transfer/solve approval, scoped identity, durable jobs/audit, and concurrency/idempotency fixes; hosted storage remains undecided |
+| FEA-4 | Recorded timeline advanced by reads; capability initialization in browser | Implement actual history/reload restoration, safe late-response handling, and real setup/mesh/run/status/recovery |
+| FEA-5 | Hashed recorded results, unknown assessment, five FEA handlers and review-package propagation | Atomic finalization, consistent stale projections, full agent context, actual numeric extraction, backend assessment and numerical verification |
+| FEA-6 | Explicit recorded labels, existing tests and documentation | Prove behavioral hardening, scheduled expiry, secure provider traffic, live numerical acceptance, and local/hosted readiness separately |
 
-No new remote partner commit or branch was present when GitHub was fetched on 2026-09-02; the earlier partner `v1` commit is already incorporated. The plan therefore keeps the established Onshape foundation and advances the SimScale boundary without inventing remote changes.
+The earlier `cb88682` inventory preceded partner commit `deb87ba`, which added adaptive Onshape review, an embedded panel and Model Insight but not the live SimScale provider. Implementation started by reviewing the subsequent `4903386` compatibility fix and fast-forwarding to that baseline. Document 08 and checkpoint 09 distinguish the new local reliability fixes from outstanding live work.
 
 ## 1. Outcome
 

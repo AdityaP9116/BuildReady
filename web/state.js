@@ -29,6 +29,7 @@ export const workflowState = {
   },
   onshapeAvailable: false,
   onshapeLastCheckedAt: null,
+  sourceFreshness: 'fixture',
   pendingDesignSnapshot: null,
   selectedFeatureId: DESIGN_FIXTURE.features.find((feature) => feature.selected)?.featureId ?? null,
   inspectionStatus: 'not_run',
@@ -168,6 +169,7 @@ export function activeDesignContext() {
       label: source.label,
       provenance: source.provenance,
       lastCheckedAt: workflowState.onshapeLastCheckedAt,
+      freshness: workflowState.sourceFreshness,
       pendingRevisionId: workflowState.pendingDesignSnapshot?.design.revisionId ?? null,
     },
   }
@@ -267,6 +269,8 @@ async function getIssueDetails(input, { signal } = {}) {
       consequence: finding.consequence,
       recommendation: finding.recommendation,
       confidence: finding.confidence,
+      inputReviewStatus: finding.inputReviewStatus,
+      measurementProvenance: finding.measurementProvenance,
       evidenceReferences: finding.evidenceReferences,
       highlightTarget: {
         objectReference: feature.objectReference,
@@ -429,6 +433,7 @@ async function generateReviewPackage(input, { signal } = {}) {
 }
 
 export function recordHumanDecision(decision) {
+  if (activeDesignSource().sourceId === 'onshape-live' && workflowState.sourceFreshness !== 'checked') return false
   if (!['approved', 'rejected'].includes(decision)) return false
   if (!workflowState.proposedChange || workflowState.decisionStatus !== 'pending') return false
   if (workflowState.proposedChange.revisionPrecondition !== revisionPrecondition(activeDesign())) {
@@ -455,7 +460,7 @@ export function recordHumanDecision(decision) {
     'human',
     `${decision}_radius_preview`,
     'completed',
-    `Human ${decision} proposal ${decisionRecord.proposalId}; revision B remains unchanged.`,
+    `Human ${decision} proposal ${decisionRecord.proposalId}; loaded revision ${activeDesign().revisionId} remains unchanged.`,
   )
   requestToolAvailabilityRefresh()
   return true
@@ -473,6 +478,7 @@ function clearDerivedState() {
   workflowState.supplierRequests = []
   workflowState.supplierQuotes = []
   workflowState.reviewPackage = null
+  workflowState.simulationEvidence = null
   workflowState.lastToolCall = null
   workflowState.auditEvents = []
   workflowState.errorState = null
@@ -498,6 +504,7 @@ export function replaceActiveDesignSnapshot(design, sourceDescriptor) {
   workflowState.activeDesignSnapshot = nextSnapshot
   workflowState.pendingDesignSnapshot = null
   workflowState.onshapeLastCheckedAt = sourceDescriptor.provenance?.retrievedAt ?? null
+  workflowState.sourceFreshness = sourceDescriptor.sourceId === 'onshape-live' ? 'checked' : 'fixture'
   clearDerivedState()
   appendAuditEvent(
     sourceDescriptor.actor ?? 'human',
@@ -535,7 +542,7 @@ async function loadOnshapeDesign(input, { signal } = {}) {
   assertEmptyObject(input)
   const requestSequence = ++onshapeLoadSequence
 
-  const { fetchOnshapeDesign } = await import('./onshape-client.js')
+  const { fetchOnshapeDesign } = await import('./onshape-client.js?v=20260903-1')
   const { design, provenance } = await fetchOnshapeDesign(signal)
   abortIfRequested(signal)
   if (requestSequence !== onshapeLoadSequence) {
@@ -601,15 +608,35 @@ async function checkOnshapeRevision(input, { signal } = {}) {
   }
 
   const requestSequence = ++onshapeLoadSequence
-  const { fetchOnshapeDesign } = await import('./onshape-client.js')
-  const { design, provenance } = await fetchOnshapeDesign(signal)
+  workflowState.sourceFreshness = 'checking'
+  emitStateChange({ reason: 'source-freshness-changed' })
+  const { fetchOnshapeDesign } = await import('./onshape-client.js?v=20260903-1')
+  let candidateResponse
+  try {
+    candidateResponse = await fetchOnshapeDesign(signal)
+    abortIfRequested(signal)
+  } catch (error) {
+    if (requestSequence === onshapeLoadSequence) {
+      workflowState.sourceFreshness = 'unresolved'
+      workflowState.pendingDesignSnapshot = null
+      emitStateChange({ reason: 'source-freshness-changed' })
+      requestToolAvailabilityRefresh()
+    }
+    throw error
+  }
+  const { design, provenance } = candidateResponse
   abortIfRequested(signal)
   if (requestSequence !== onshapeLoadSequence) {
     throw new WorkflowRuleError('STALE_SOURCE_LOAD', 'a newer design-source request has already completed.', true)
   }
 
   workflowState.onshapeLastCheckedAt = provenance.retrievedAt
-  const changed = provenance.microversionId !== activeDesignSource().provenance?.microversionId
+  const changed = revisionPrecondition(design) !== activeSnapshotKey()
+  workflowState.sourceFreshness = changed ? 'changed' : 'checked'
+  if (changed && workflowState.proposedChange) {
+    workflowState.proposedChange = { ...workflowState.proposedChange, status: 'stale' }
+    workflowState.decisionStatus = 'stale'
+  }
   const measurementChanges = changed ? changedMeasurementKeys(activeDesign(), design) : []
   workflowState.pendingDesignSnapshot = changed
     ? createDesignSnapshot(design, {
@@ -638,7 +665,7 @@ async function checkOnshapeRevision(input, { signal } = {}) {
     derivedEvidenceExists: hasDerivedEvidence(),
     nextAction: changed
       ? 'Activate the candidate revision to invalidate old evidence and continue with current geometry.'
-      : 'The active Onshape snapshot is current; existing evidence remains valid.',
+      : 'The active snapshot matched at this check. Engineering applicability still requires separate review.',
   }
 }
 
@@ -682,9 +709,18 @@ async function activateOnshapeRevision(input, { signal } = {}) {
   }
 }
 
+export function assertActiveSourceUsable() {
+  if (activeDesignSource().sourceId === 'onshape-live' && workflowState.sourceFreshness !== 'checked') {
+    throw new WorkflowRuleError('ONSHAPE_REFRESH_REQUIRED', 'Check and activate the current Onshape revision before creating new evidence.')
+  }
+}
+
 function audited(toolName, summary, handler) {
   return async (input, options = {}) => {
     try {
+      if (['inspect_cnc_manufacturability', 'get_issue_details', 'preview_radius_change', 'prepare_quote_comparison', 'generate_review_package'].includes(toolName)) {
+        assertActiveSourceUsable()
+      }
       const result = await handler(input, options)
       recordToolCall(toolName, 'completed', summary)
       return result
@@ -701,12 +737,12 @@ function audited(toolName, summary, handler) {
 export const gate7Handlers = Object.freeze({
   get_active_design_context: audited(
     'get_active_design_context',
-    'Returned BRKT-001 revision B with five stable feature records.',
+    'Returned the selected design snapshot with its source and freshness.',
     getActiveDesignContext,
   ),
   inspect_cnc_manufacturability: audited(
     'inspect_cnc_manufacturability',
-    'Evaluated five deterministic CNC rules and attached evidence references.',
+    'Evaluated applicable demonstration CNC rules with coverage and source evidence.',
     inspectCncManufacturability,
   ),
   get_issue_details: audited(

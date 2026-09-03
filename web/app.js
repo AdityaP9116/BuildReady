@@ -299,7 +299,7 @@ function renderSimulation() {
             <div><p class="eyebrow">Controlled study</p><h2>Linear-static force setup</h2></div>
             <span>Draft only</span>
           </div>
-          <p class="authority-note">The material and named selections are frozen by the versioned FEA contract. The existing radius preview is not part of exported CAD until Onshape itself changes.</p>
+          <p class="authority-note">The material and named selections here are demonstration defaults, not reviewed properties of live CAD. A radius preview never changes exported CAD. Review the frozen setup below, not an edited draft, before approving a recorded test.</p>
           <div class="fea-fields">
             <label>Force <span><input id="fea-force" type="number" min="0.001" max="100000" step="0.001" value="441" required /> N</span></label>
             <label>Direction X <input id="fea-direction-x" type="number" step="0.1" value="0" required /></label>
@@ -322,6 +322,7 @@ function renderSimulation() {
             <div><dt>Hash</dt><dd id="fea-study-hash">—</dd></div>
             <div><dt>Currentness</dt><dd id="fea-study-currentness">—</dd></div>
           </dl>
+          <p id="fea-frozen-setup" class="authority-note">No frozen setup.</p>
           <div class="fea-consent" id="fea-consent" hidden>
             <label><input type="checkbox" id="fea-cad-consent" /> I approve sending this exact CAD snapshot to the configured provider.</label>
             <label><input type="checkbox" id="fea-compute-consent" /> I approve the disclosed compute use.</label>
@@ -401,6 +402,8 @@ function renderOnshapePanel() {
 
       <details class="panel-more-actions">
         <summary>Review and export</summary>
+        <p>Simulation and supplier workflows continue in the full workspace. The same Part Studio is reloaded there; unsaved panel results are not transferred.</p>
+        <a id="panel-open-workspace" href="/design" target="_blank" rel="noopener noreferrer">Open this Part Studio in the full workspace</a>
         <div class="panel-actions" aria-label="Review and export actions">
           <button type="button" class="secondary-button" id="quote-comparison-button" data-tool="prepare_quote_comparison" disabled>Compare sample suppliers</button>
           <button type="button" class="secondary-button" id="panel-package" data-tool="generate_review_package" disabled>Create review package</button>
@@ -412,6 +415,7 @@ function renderOnshapePanel() {
         <div class="proposal-heading"><div><p class="eyebrow">Human decision required</p><h2 id="proposal-title">Inside-radius preview</h2></div><span id="proposal-status">Pending</span></div>
         <div class="proposal-comparison"><div><span>Before</span><strong id="proposal-before">—</strong></div><div aria-hidden="true">→</div><div><span>After</span><strong id="proposal-after">—</strong></div></div>
         <p id="proposal-effect"></p>
+        <small id="proposal-revision"></small>
         <div class="proposal-actions"><button type="button" id="approve-proposal">Approve preview</button><button type="button" class="secondary-button" id="reject-proposal">Reject</button></div>
         <p class="authority-note">This records a review decision only. It never edits the Onshape model.</p>
       </section>
@@ -445,6 +449,8 @@ function renderSuppliers() {
         <section class="empty-state">
           <span>Gate 6</span>
           <h2>No reviewed configuration has been quoted.</h2>
+          <p>Have an actual supplier document? The private evidence workspace keeps real requests and quotations separate from this demonstration and does not require completed FEA.</p>
+          <a class="button-link" href="/sourcing.html">Open private supplier evidence</a>
           <p>Complete the inspection, record a visible human decision, finish the bounded simulation stage, and then run the comparison.</p>
           <a class="button-link" href="/design" data-route>Return to design</a>
         </section>
@@ -724,7 +730,8 @@ function renderProposal() {
 
   document.querySelector('#proposal-before').textContent = `${proposal.before.insideRadiusMm} mm`
   document.querySelector('#proposal-after').textContent = `${proposal.after.insideRadiusMm} mm`
-  document.querySelector('#proposal-revision').textContent = `Revision ${activeDesign().revisionId} snapshot`
+  const revisionLabel = document.querySelector('#proposal-revision')
+  if (revisionLabel) revisionLabel.textContent = `Revision ${activeDesign().revisionId} snapshot`
   document.querySelector('#proposal-effect').textContent = proposal.expectedCostEffect
   const status = document.querySelector('#proposal-status')
   status.textContent = workflowState.decisionStatus.replace('_', ' ')
@@ -772,13 +779,21 @@ function updateDiagnostics() {
   registrationBadge.textContent = workflowState.registrationStatus.replace('_', ' ')
   registrationBadge.dataset.status = workflowState.registrationStatus
 
-  auditEvents.innerHTML = workflowState.auditEvents.length
-    ? workflowState.auditEvents
-      .slice()
-      .reverse()
-      .map((event) => `<li><strong>${event.toolName}</strong><span>${event.status}</span><small>${event.summary}</small></li>`)
-      .join('')
-    : '<li>No tool calls recorded.</li>'
+  auditEvents.replaceChildren()
+  for (const event of workflowState.auditEvents.slice().reverse()) {
+    const item = document.createElement('li')
+    for (const [tag, value] of [['strong', event.toolName], ['span', event.status], ['small', event.summary]]) {
+      const field = document.createElement(tag)
+      field.textContent = value
+      item.append(field)
+    }
+    auditEvents.append(item)
+  }
+  if (!workflowState.auditEvents.length) {
+    const empty = document.createElement('li')
+    empty.textContent = 'No tool calls recorded.'
+    auditEvents.append(empty)
+  }
 
   if (findingCount && findingsList) renderFindings(findingCount, findingsList)
   if (issueDetailsButton) issueDetailsButton.disabled = !workflowState.selectedFindingId
@@ -788,6 +803,7 @@ function updateDiagnostics() {
   }
   if (quoteComparisonButton) {
     quoteComparisonButton.disabled = !['approved', 'rejected'].includes(workflowState.decisionStatus)
+      || normalizePath(window.location.pathname) === '/onshape-panel'
       || workflowState.simulationEvidence?.lifecycleState !== 'COMPLETE'
       || workflowState.simulationEvidence?.currentness !== 'CURRENT'
       || workflowState.supplierQuotes.length > 0
@@ -821,9 +837,15 @@ function updateOnshapePanel() {
   const connected = onshapeExtensionStatus.phase === 'connected'
   const inspect = document.querySelector('#panel-inspect')
   const packageButton = document.querySelector('#panel-package')
-  if (inspect) inspect.disabled = !connected || workflowState.inspectionStatus === 'complete'
+  if (inspect) inspect.disabled = !connected || workflowState.sourceFreshness !== 'checked' || workflowState.inspectionStatus === 'complete'
   if (packageButton) {
-    packageButton.disabled = workflowState.supplierQuotes.length !== 2 || Boolean(workflowState.reviewPackage)
+    packageButton.disabled = true
+  }
+  const workspaceLink = document.querySelector('#panel-open-workspace')
+  if (workspaceLink && onshapeExtensionContext) {
+    const params = new URLSearchParams({ ...onshapeExtensionContext, server: onshapeExtensionContext.serverOrigin })
+    params.delete('serverOrigin')
+    workspaceLink.href = `/design?${params}`
   }
   const packageResult = document.querySelector('#panel-package-result')
   if (packageResult) {
@@ -852,7 +874,7 @@ function renderDesignSource() {
   document.querySelector('#source-detail').textContent = isLive
     ? workflowState.pendingDesignSnapshot
       ? `A newer checked revision (${workflowState.pendingDesignSnapshot.design.revisionId}) is ready to activate.`
-      : `${design.designId} measured live from Onshape at microversion ${designSource.provenance.microversionId.slice(0, 8)}.`
+      : `${design.designId}: ${workflowState.sourceFreshness}. Last checked ${workflowState.onshapeLastCheckedAt ?? 'unknown'}. Check the revision after CAD edits; this is not automatic synchronization.`
     : 'BRKT-001 revision B ships with the app so the workflow runs with no account or setup.'
 
   const provenance = document.querySelector('#source-provenance')
@@ -906,6 +928,10 @@ function synchronizeSimulationWorkspace() {
 
   snapshot.textContent = activeSnapshotKey()
   const capabilities = feaState.capabilities
+  const liveSourceNeedsSetup = workflowState.designSource.sourceId === 'onshape-live'
+  for (const button of document.querySelectorAll('#fea-study-form button[type="submit"], [data-fea-tool="prepare_static_stress_study"]')) {
+    button.disabled = liveSourceNeedsSetup || !capabilities || capabilities.provider === 'disabled'
+  }
   const modeTitle = document.querySelector('#fea-mode-title')
   const modeDetail = document.querySelector('#fea-mode-detail')
   const modeBadge = document.querySelector('#fea-mode-badge')
@@ -914,6 +940,7 @@ function synchronizeSimulationWorkspace() {
       ? `${capabilities.provider} live provider`
       : `${capabilities.provider} validation mode`
     modeDetail.textContent = capabilities.note
+    if (liveSourceNeedsSetup) modeDetail.textContent += ' This Part Studio still needs an exact CAD export, reviewed material and geometry mapping. Demo study preparation is disabled for live CAD.'
     modeBadge.textContent = capabilities.live ? 'live' : capabilities.provider
     modeBadge.dataset.status = capabilities.live ? 'ready' : 'planned'
   } else if (feaState.lastError) {
@@ -930,6 +957,10 @@ function synchronizeSimulationWorkspace() {
   document.querySelector('#fea-study-snapshot').textContent = study?.snapshotKey ?? '—'
   document.querySelector('#fea-study-hash').textContent = study?.studyHash ?? '—'
   document.querySelector('#fea-study-currentness').textContent = study?.currentness?.toLowerCase() ?? '—'
+  const manifest = study?.manifest
+  document.querySelector('#fea-frozen-setup').textContent = manifest
+    ? `Frozen setup: ${manifest.material.label}; force ${manifest.load.magnitudeN} N; direction [${manifest.load.direction.join(', ')}]; mesh ${manifest.mesh.preset}; body ${manifest.selections.body}; support ${manifest.selections.fixed}; loaded region ${manifest.selections.load}; monitor ${manifest.selections.monitor}; minimum safety factor ${manifest.requirements.minimumSafetyFactor}; maximum displacement ${manifest.requirements.maximumDisplacementMm} mm. These values, not subsequent draft edits, belong to ${study.studyHash}.`
+    : 'No frozen setup.'
 
   const consent = document.querySelector('#fea-consent')
   consent.hidden = !study || Boolean(study.approval) || study.currentness !== 'CURRENT'
@@ -1525,6 +1556,20 @@ async function startApplication() {
   await renderRoute()
 
   if (!panelMode) {
+    if (new URL(window.location.href).searchParams.has('documentId')) {
+      try {
+        onshapeExtensionContext = parseOnshapeExtensionContext()
+        configureOnshapeExtensionContext(onshapeExtensionContext)
+        setOnshapeAvailability(true)
+        await gate7Handlers.load_onshape_design({}, {})
+      } catch (error) {
+        workflowState.errorState = toolErrorEnvelope(error)
+        setOnshapeAvailability(false)
+      }
+      updateDiagnostics()
+      renderDesignSource()
+      return
+    }
     // Probed once, after first paint. A deployment without Onshape credentials
     // simply never offers the control, and the fixture path is unaffected.
     void onshapeSourceAvailable().then(setOnshapeAvailability)
@@ -1547,7 +1592,7 @@ async function startApplication() {
     await gate7Handlers.load_onshape_design({}, {})
     onshapeExtensionStatus = {
       phase: 'connected',
-      message: 'Ready to check this Part Studio. BuildReady reads named dimensions and will not change your model.',
+      message: 'Read-only snapshot loaded. This panel does not automatically follow CAD edits. Open the full workspace to recheck and activate revisions before continuing.',
     }
   } catch (error) {
     const envelope = toolErrorEnvelope(error)

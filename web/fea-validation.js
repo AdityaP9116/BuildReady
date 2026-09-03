@@ -196,13 +196,19 @@ export function percentDifference(actual, reference) {
 
 export function evaluateVerificationEvidence(evidence, thresholds) {
   assertPlainObject(evidence, 'verification evidence')
+  assertPlainObject(thresholds, 'verification thresholds')
+  const within = (key, strict = false) => (
+    typeof evidence[key] === 'number' && Number.isFinite(evidence[key]) && evidence[key] >= 0
+    && typeof thresholds[key] === 'number' && Number.isFinite(thresholds[key]) && thresholds[key] >= 0
+    && (strict ? evidence[key] < thresholds[key] : evidence[key] <= thresholds[key])
+  )
   const checks = Object.freeze({
-    analyticalStress: evidence.analyticalStressErrorPercent <= thresholds.analyticalStressErrorPercent,
-    analyticalDisplacement: evidence.analyticalDisplacementErrorPercent <= thresholds.analyticalDisplacementErrorPercent,
-    manualParity: evidence.manualParityErrorPercent <= thresholds.manualParityErrorPercent,
-    reactionBalance: evidence.reactionBalanceErrorPercent <= thresholds.reactionBalanceErrorPercent,
-    meshDisplacement: evidence.meshDisplacementChangePercent <= thresholds.meshDisplacementChangePercent,
-    meshReviewedStress: evidence.meshReviewedStressChangePercent <= thresholds.meshReviewedStressChangePercent,
+    analyticalStress: within('analyticalStressErrorPercent'),
+    analyticalDisplacement: within('analyticalDisplacementErrorPercent'),
+    manualParity: within('manualParityErrorPercent'),
+    reactionBalance: within('reactionBalanceErrorPercent'),
+    meshDisplacement: within('meshDisplacementChangePercent', true),
+    meshReviewedStress: within('meshReviewedStressChangePercent', true),
     requiredSelections: evidence.requiredSelectionsResolved === true,
     criticalReadBack: evidence.criticalReadBackMatches === true,
   })

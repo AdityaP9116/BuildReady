@@ -19,6 +19,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+try:
+    from scripts.secure_transport import bounded_opener
+except ModuleNotFoundError:
+    from secure_transport import bounded_opener
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SIMSCALE_API_ORIGIN = "https://api.simscale.com"
@@ -103,7 +108,7 @@ def _read_json_response(response: Any) -> dict[str, Any]:
 def probe_projects(
     api_key: str,
     *,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = bounded_opener,
 ) -> ProbeResult:
     request = urllib.request.Request(
         f"{SIMSCALE_API_ORIGIN}{PROJECTS_PATH}",

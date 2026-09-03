@@ -17,6 +17,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+try:
+    from scripts.secure_transport import bounded_opener
+except ModuleNotFoundError:
+    from secure_transport import bounded_opener
+
 
 SIMSCALE_API_ORIGIN = "https://api.simscale.com"
 UUID_PATTERN = re.compile(
@@ -51,7 +56,7 @@ class SimScaleTransportClient:
         *,
         api_key: str,
         project_id: str,
-        opener: Callable[..., Any] = urllib.request.urlopen,
+        opener: Callable[..., Any] = bounded_opener,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         if not api_key:
@@ -200,6 +205,7 @@ class SimScaleTransportClient:
             or parsed.username
             or parsed.password
             or parsed.port not in {None, 443}
+            or parsed.fragment
         ):
             raise SimScaleTransportError(
                 "SIMSCALE_INVALID_UPLOAD_URL", "SimScale returned an unsafe upload URL."

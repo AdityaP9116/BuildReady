@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from scripts.fea_service import FeaService, FeaServiceError, FeaStore, ServicePaths, sha256_value
@@ -114,7 +115,7 @@ class FeaServiceTests(unittest.TestCase):
 
     def test_stale_study_cannot_be_approved(self) -> None:
         study = self.service.create_study(self.manifest)["study"]
-        self.service.mark_snapshot_current("new-snapshot")
+        self.service.mark_snapshot_current("new-snapshot", previous_snapshot_key=self.manifest["snapshotKey"])
         with self.assertRaises(FeaServiceError) as stale:
             self.service.approve_and_submit(study["studyId"], self.approve_payload())
         self.assertEqual("FEA_STALE_APPROVAL", stale.exception.code)
@@ -124,10 +125,57 @@ class FeaServiceTests(unittest.TestCase):
         self.service.approve_and_submit(study["studyId"], self.approve_payload())
         self.clock.now += 0.5
         self.service.get_results(study["studyId"])
-        self.service.mark_snapshot_current("different-snapshot")
+        self.service.mark_snapshot_current("different-snapshot", previous_snapshot_key=self.manifest["snapshotKey"])
         stale = self.service.get_study(study["studyId"])["study"]
         self.assertEqual("COMPLETE", stale["lifecycleState"])
         self.assertEqual("STALE", stale["currentness"])
+        response = self.service.get_results(study["studyId"])
+        self.assertEqual("STALE", response["applicability"]["currentness"])
+        self.assertFalse(response["applicability"]["usableForEngineeringDisposition"])
+        self.assertEqual("current", response["result"]["currentness"], "Immutable result retains historical state")
+
+    def test_server_preparation_handles_browser_numeric_representation(self) -> None:
+        unsigned = {key: value for key, value in self.manifest.items() if key != "studyHash"}
+        unsigned["load"] = {**unsigned["load"], "direction": [0.000000001, -1.0, 0.0]}
+        response = self.service.prepare_study(unsigned)
+        self.assertEqual(sha256_value(unsigned), response["study"]["studyHash"])
+        self.assertEqual(unsigned["load"], response["study"]["manifest"]["load"])
+        with self.assertRaises(FeaServiceError):
+            self.service.prepare_study(self.manifest)
+        unsigned["load"]["magnitudeN"] = float("nan")
+        with self.assertRaises(FeaServiceError):
+            self.service.prepare_study(unsigned)
+
+    def test_invalidation_is_exact_and_other_models_are_unaffected(self) -> None:
+        first = self.service.create_study(self.manifest)["study"]
+        unsigned = {key: value for key, value in self.manifest.items() if key != "studyHash"}
+        other = self.service.prepare_study({**unsigned, "snapshotKey": "unrelated-model"})["study"]
+        self.assertEqual("CURRENT", self.service.get_study(first["studyId"])["study"]["currentness"])
+        self.service.mark_snapshot_current("next-revision", previous_snapshot_key=first["snapshotKey"])
+        self.assertEqual("CURRENT", self.service.get_study(other["studyId"])["study"]["currentness"])
+
+    def test_simultaneous_pollers_finalize_once_across_store_instances(self) -> None:
+        study = self.service.create_study(self.manifest)["study"]
+        self.service.approve_and_submit(study["studyId"], self.approve_payload())
+        self.clock.now += 0.5
+        peers = [FeaService(FeaStore(self.paths), clock=self.clock) for _ in range(8)]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(lambda service: service.get_results(study["studyId"])["result"], peers))
+        self.assertEqual(1, len({result["resultHash"] for result in results}))
+        self.assertEqual(1, len(list(self.paths.artifacts.rglob("normalized-result.json"))))
+        self.clock.now += 100
+        self.assertEqual(results[0], self.service.get_results(study["studyId"])["result"])
+
+    def test_cleanup_refuses_paths_outside_private_root(self) -> None:
+        study = self.service.create_study(self.manifest)["study"]
+        self.service.approve_and_submit(study["studyId"], self.approve_payload())
+        self.clock.now += 0.5
+        self.service.get_results(study["studyId"])
+        with self.service.store._connect() as connection:
+            connection.execute("UPDATE artifacts SET storage_path = '../outside.json'")
+        with self.assertRaises(FeaServiceError) as unsafe:
+            self.service.store.cleanup_expired(self.clock.now + 8 * 86400)
+        self.assertEqual("FEA_UNSAFE_ARTIFACT_PATH", unsafe.exception.code)
 
     def test_expired_artifacts_are_deleted_but_records_remain(self) -> None:
         study = self.service.create_study(self.manifest)["study"]

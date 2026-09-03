@@ -1,4 +1,4 @@
-"""Exact-microversion STEP export client for the live FEA transport boundary.
+"""Immutable-version STEP export client with explicit part/configuration binding.
 
 The client is intentionally independent from the browser-facing design proxy. It
 accepts only frozen identifiers, never a caller-provided URL, keeps credentials
@@ -17,6 +17,12 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
+from urllib.parse import urlsplit
+
+try:
+    from scripts.secure_transport import bounded_opener
+except ModuleNotFoundError:
+    from secure_transport import bounded_opener
 
 
 ID_PATTERN = re.compile(r"^[A-Za-z0-9]{8,40}$")
@@ -38,16 +44,23 @@ class FrozenPartStudio:
     document_id: str
     element_id: str
     microversion_id: str
+    version_id: str = ''
+    part_id: str = ''
+    configuration: str = ''
 
     def validate(self) -> None:
         if not all(
-            ID_PATTERN.fullmatch(value)
+            isinstance(value, str) and ID_PATTERN.fullmatch(value)
             for value in (self.document_id, self.element_id, self.microversion_id)
         ):
             raise OnshapeExportError(
                 "ONSHAPE_EXPORT_INVALID_ID",
                 "The frozen Onshape identifiers are malformed.",
             )
+        if not ID_PATTERN.fullmatch(self.version_id) or not re.fullmatch(r'[A-Za-z0-9._-]{1,100}', self.part_id):
+            raise OnshapeExportError('ONSHAPE_IMMUTABLE_SOURCE_REQUIRED', 'An existing immutable version and exactly one selected part are required.')
+        if self.configuration != '':
+            raise OnshapeExportError('ONSHAPE_CONFIGURATION_UNVERIFIED', 'Only explicitly default configuration is supported until configured export parity is proven.')
 
 
 @dataclass(frozen=True)
@@ -58,6 +71,10 @@ class StepExport:
     sha256: str
     byte_size: int
     content_type: str
+    version_id: str
+    microversion_id: str
+    part_id: str
+    configuration: str
 
 
 class OnshapeExportClient:
@@ -67,7 +84,7 @@ class OnshapeExportClient:
         access_key: str,
         secret_key: str,
         base_url: str = "https://cad.onshape.com",
-        opener: Callable[..., Any] = urllib.request.urlopen,
+        opener: Callable[..., Any] = bounded_opener,
         sleeper: Callable[[float], None] = time.sleep,
         max_cad_bytes: int = DEFAULT_MAX_CAD_BYTES,
     ) -> None:
@@ -75,7 +92,8 @@ class OnshapeExportClient:
             raise OnshapeExportError(
                 "ONSHAPE_EXPORT_NOT_CONFIGURED", "Onshape export credentials are missing."
             )
-        if not base_url.startswith("https://") and not base_url.startswith("http://127.0.0.1:"):
+        parsed = urlsplit(base_url)
+        if parsed.scheme != 'https' or parsed.hostname != 'cad.onshape.com' or parsed.port not in {None, 443} or parsed.username or parsed.password or parsed.path not in {'', '/'} or parsed.query or parsed.fragment:
             raise OnshapeExportError(
                 "ONSHAPE_EXPORT_INVALID_ORIGIN", "The Onshape API origin is not allowed."
             )
@@ -97,25 +115,35 @@ class OnshapeExportClient:
         *,
         poll_attempts: int = 12,
         poll_interval_seconds: float = 1.0,
+        resume_translation_id: str | None = None,
+        on_translation: Callable[[str], None] | None = None,
     ) -> StepExport:
         snapshot.validate()
         if not 1 <= poll_attempts <= 120:
             raise OnshapeExportError(
                 "ONSHAPE_EXPORT_INVALID_POLL", "The translation polling limit is invalid."
             )
-        translation = self._json_request(
+        version = self._json_request('GET', f'/api/v16/documents/d/{snapshot.document_id}/versions/{snapshot.version_id}')
+        if version.get('id') != snapshot.version_id or version.get('microversion') != snapshot.microversion_id:
+            raise OnshapeExportError('ONSHAPE_VERSION_MISMATCH', 'The immutable version does not resolve to the approved microversion.')
+        translation = self._json_request('GET', f'/api/v16/translations/{self._identifier(resume_translation_id, "translation")}') if resume_translation_id else self._json_request(
             "POST",
             (
-                f"/api/v11/partstudios/d/{snapshot.document_id}/m/"
-                f"{snapshot.microversion_id}/e/{snapshot.element_id}/translations"
+                f"/api/v16/partstudios/d/{snapshot.document_id}/v/"
+                f"{snapshot.version_id}/e/{snapshot.element_id}/translations"
             ),
             {
                 "formatName": "STEP",
                 "storeInDocument": False,
                 "translate": True,
+                "partIds": snapshot.part_id,
+                "configuration": snapshot.configuration,
+                "grouping": True,
             },
         )
         translation_id = self._identifier(translation.get("id"), "translation")
+        if on_translation is not None:
+            on_translation(translation_id)
 
         final = translation
         for attempt in range(poll_attempts):
@@ -138,7 +166,7 @@ class OnshapeExportClient:
                     retryable=True,
                 )
             self.sleeper(poll_interval_seconds)
-            final = self._json_request("GET", f"/api/v11/translations/{translation_id}")
+            final = self._json_request("GET", f"/api/v16/translations/{translation_id}")
 
         external_ids = final.get("resultExternalDataIds")
         if not isinstance(external_ids, list) or len(external_ids) != 1:
@@ -148,7 +176,7 @@ class OnshapeExportClient:
             )
         external_id = self._identifier(external_ids[0], "external data")
         content, content_type = self._binary_request(
-            f"/api/v11/documents/d/{snapshot.document_id}/externaldata/{external_id}"
+            f"/api/v16/documents/d/{snapshot.document_id}/externaldata/{external_id}"
         )
         if not content.startswith(b"ISO-10303-21"):
             raise OnshapeExportError(
@@ -163,6 +191,10 @@ class OnshapeExportClient:
             sha256=f"sha256-{digest}",
             byte_size=len(content),
             content_type=content_type,
+            version_id=snapshot.version_id,
+            microversion_id=snapshot.microversion_id,
+            part_id=snapshot.part_id,
+            configuration=snapshot.configuration,
         )
 
     @staticmethod

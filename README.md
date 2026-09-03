@@ -11,6 +11,8 @@ bounded workflow steps without gaining approval or CAD-write authority. See
 
 ## Project status
 
+The current integration checkpoint adds design-context consistency fixes, recorded FEA reliability improvements, and a partial local private quotation workspace at `/sourcing.html`. Live SimScale numerical verification and actual supplier quotation acceptance are **not complete**. The user requires $0 spending; no paid execution or services are authorized. See [the current checkpoint and known limitations](planniing%20adn%20research/09-integration-implementation-checkpoint.md) before using the new evidence workflow.
+
 Gate 10 completes the local submission-readiness package. The feature-frozen application now has an official-form-aligned Devpost draft, sub-three-minute demo script, testing record, challenge-work history, attribution disclosure, and final external-action checklist. The public deployment, YouTube upload, participant-specific form answers, and final Devpost action remain deliberately unclaimed until verified.
 
 ## Planned challenge workflow
@@ -67,6 +69,8 @@ uv run python scripts/serve.py
 ```
 
 Open `http://127.0.0.1:4173`. The development server provides SPA fallbacks, so `/design`, `/suppliers`, `/review`, and `/about` can all be loaded directly.
+
+The development server is now loopback-only and rejects cross-origin API requests. It is not an authenticated hosted backend: do not expose it through a tunnel or reverse proxy for real CAD/quotes. Python dependencies remain managed with uv; no npm install is needed. Node 24.11.0 is the JavaScript test runtime.
 
 Quality checks:
 
@@ -244,6 +248,8 @@ Configure with the variables in `.env.example` (Cloudflare secrets in production
 ### SimScale stress-simulation boundary
 
 The `/simulation` workspace now implements the complete provider-neutral orchestration path in explicitly labeled recorded mode: strict force-only validation, deterministic study hashes, durable SQLite state, a visible human-only CAD-sharing/compute approval, asynchronous lifecycle states, seven-day private artifact retention, revision invalidation, normalized evidence, and five route/state-scoped WebMCP tools. Recorded metrics are always `indeterminate` and cannot produce an engineering pass or fail.
+
+Implementation checkpoint (2026-09-02): browser drafts now receive their authoritative study hash from Python; concurrent recorded finalization is serialized; current applicability is separate from immutable historical results; source invalidation is limited to the explicitly replaced snapshot; and the running local server checks artifact expiry every minute. Live Part Studio preparation is blocked until actual export/material/topology review exists. Live SimScale, authenticated approvals/history, genuine supplier quotations and full recovery/retention acceptance remain unfinished. See [the implementation checkpoint](./planniing%20adn%20research/09-integration-implementation-checkpoint.md) for tested scope and next steps.
 
 Before any live CAD upload or compute is enabled, run the bounded account preflight:
 

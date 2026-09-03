@@ -96,6 +96,8 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
     features.push({
       ...base,
       dimensions: Object.fromEntries(entries.map(([key, roleId]) => [key, byRole.get(roleId).valueMm])),
+      inputReviewStatus: 'inferred-unreviewed',
+      measurementProvenance: Object.fromEntries(entries.map(([key, roleId]) => [key, { ...byRole.get(roleId) }])),
       selected: features.length === 0,
     })
   }
@@ -108,29 +110,51 @@ export function mapOnshapeToDesign(payload, source, baseFixture) {
 
   // The Onshape microversion changes on every model edit, so it is the natural
   // revision precondition: an inspection taken before an edit is detectably stale.
-  const microversion = payload.microversionId ?? 'unknown'
-  const revisionId = `onshape-${microversion.slice(0, 12)}`
+  const microversion = payload.microversionId
+  if (typeof microversion !== 'string' || !/^[A-Za-z0-9]{8,40}$/.test(microversion)) {
+    throw new OnshapeAdapterError('ONSHAPE_NO_MICROVERSION', 'a full Onshape microversion is required.')
+  }
+  const scope = payload.document?.workspaceOrVersion ?? (payload.document?.versionId ? 'v' : 'w')
+  const scopeId = payload.document?.workspaceOrVersionId ?? payload.document?.versionId ?? payload.document?.workspaceId
+  if (!['w', 'v'].includes(scope) || ![payload.document?.documentId, payload.document?.elementId, scopeId].every(
+    (id) => typeof id === 'string' && /^[A-Za-z0-9]{8,40}$/.test(id),
+  )) throw new OnshapeAdapterError('ONSHAPE_BAD_CONTEXT', 'the full document, element and workspace/version are required.')
+  const sourceSnapshotKey = `onshape-source-1:${payload.document.documentId}/${scope}/${scopeId}/${payload.document.elementId}/${microversion}`
+  const revisionId = `onshape-${microversion}`
   const provenance = `${payload.document.documentId}/${microversion}`
-  const designId = `ONSHAPE-${payload.document.documentId.slice(0, 8).toUpperCase()}`
+  const designId = `ONSHAPE-${payload.document.documentId}-${payload.document.elementId}`
 
   return {
     design: {
       ...baseFixture,
       designId,
       name: payload.document.name,
+      sourceSnapshotKey,
+      sourceIdentity: { documentId: payload.document.documentId, elementId: payload.document.elementId,
+        workspaceOrVersion: scope, workspaceOrVersionId: scopeId, microversionId: microversion,
+        configuration: 'default', selectedPartIds: [], evidenceLevel: 'parameter-snapshot-not-exported-cad' },
+      material: { id: 'unknown', label: 'Material not reviewed', reviewStatus: 'unknown' },
+      process: { id: 'unreviewed-cnc', label: 'CNC demonstration checks (process not reviewed)', reviewStatus: 'unknown' },
       revisionId,
       fixtureVersion: `onshape-${payload.serializationVersion ?? '1.0.0'}`,
       features: features.map((feature) => ({
         ...feature,
         objectReference: `onshape://${payload.document.documentId}/${payload.document.elementId}/${feature.featureId}`,
         revisionProvenance: provenance,
-        evidenceReference: `onshape://documents/${payload.document.documentId}/microversions/${microversion}/elements/${payload.document.elementId}/features/${feature.featureId}`,
+        evidenceReference: `onshape://documents/${payload.document.documentId}/microversions/${microversion}/elements/${payload.document.elementId}`,
+        evidenceReferences: Object.values(feature.measurementProvenance).map((measurement) => (
+          `onshape://documents/${payload.document.documentId}/microversions/${microversion}/elements/${payload.document.elementId}/${measurement.sourceFeatureId ? `features/${encodeURIComponent(measurement.sourceFeatureId)}` : `variables/${encodeURIComponent(measurement.variableName)}`}`
+        )),
       })),
     },
     provenance: {
       sourceId: source.sourceId,
       documentId: payload.document.documentId,
       workspaceId: payload.document.workspaceId,
+      versionId: payload.document.versionId ?? null,
+      workspaceOrVersion: scope,
+      workspaceOrVersionId: scopeId,
+      sourceSnapshotKey,
       elementId: payload.document.elementId,
       documentName: payload.document.name,
       documentHref: payload.document.href,

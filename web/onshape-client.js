@@ -70,6 +70,7 @@ export async function onshapeSourceAvailable() {
  */
 export async function fetchOnshapeDesign(signal) {
   const config = await loadSourceConfig()
+  const requestedContext = extensionContext ? { ...extensionContext } : null
 
   let response
   try {
@@ -94,14 +95,29 @@ export async function fetchOnshapeDesign(signal) {
     )
   }
 
+  if (requestedContext && Object.entries(onshapeProxyContext(payload.document)).some(
+    ([key, value]) => value !== requestedContext[key],
+  )) {
+    throw new OnshapeSourceError('ONSHAPE_CONTEXT_MISMATCH', 'The response does not match the selected Part Studio. No design was activated.')
+  }
+
   try {
-    // The fixture supplies context Onshape variables do not describe: material,
-    // process, quantity, feature labels, and highlight targets.
+    // Only display/rule scaffolding comes from the fixture; live material and
+    // manufacturing intent remain explicitly unknown until reviewed.
     return mapOnshapeToDesign(payload, config, DESIGN_FIXTURE)
   } catch (error) {
     if (error instanceof OnshapeAdapterError) {
       throw new OnshapeSourceError(error.code, error.message, false)
     }
     throw error
+  }
+}
+
+function onshapeProxyContext(document) {
+  return {
+    documentId: document?.documentId,
+    workspaceOrVersion: document?.workspaceOrVersion ?? (document?.versionId ? 'v' : 'w'),
+    workspaceOrVersionId: document?.workspaceOrVersionId ?? document?.versionId ?? document?.workspaceId,
+    elementId: document?.elementId,
   }
 }

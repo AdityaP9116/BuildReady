@@ -49,13 +49,14 @@ export function classifyInsightQuery(rawQuery) {
 
   if (hasAny(text, UNSAFE_TERMS)) return Object.freeze({ kind: 'authority_boundary', query, featureId: selectedFeatureId })
   if (hasAny(text, ['help', 'what can you do', 'commands', 'how do i use'])) return Object.freeze({ kind: 'help', query, featureId: selectedFeatureId })
+  if (hasAny(text, ['simscale', 'stress', 'fea', 'simulate', 'simulation'])) return Object.freeze({ kind: 'simulation', query, featureId: selectedFeatureId })
   if (hasAny(text, ['load live onshape', 'load the live onshape', 'load onshape', 'read part studio', 'use part studio', 'connect onshape'])) return Object.freeze({ kind: 'live_source', query, featureId: selectedFeatureId })
   if (hasAny(text, ['variable', 'mapping', 'mapped', 'inferred', 'discovery', 'confidence'])) return Object.freeze({ kind: 'variables', query, featureId: selectedFeatureId })
   if (hasAny(text, ['coverage', 'skipped rule', 'applicable rule', 'what was checked'])) return Object.freeze({ kind: 'coverage', query, featureId: selectedFeatureId })
   if (hasAny(text, ['audit', 'history', 'what happened', 'actions taken'])) return Object.freeze({ kind: 'audit', query, featureId: selectedFeatureId })
   if (hasAny(text, ['package', 'report', 'export review'])) return Object.freeze({ kind: 'package', query, featureId: selectedFeatureId })
   if (hasAny(text, ['quote', 'supplier', 'cost', 'lead time', 'price'])) return Object.freeze({ kind: 'suppliers', query, featureId: selectedFeatureId, quantity })
-  if (hasAny(text, ['preview', 'show the change', 'simulate', 'try radius'])) {
+  if (hasAny(text, ['preview', 'show the change', 'try radius'])) {
     return Object.freeze({ kind: 'preview', query, featureId: selectedFeatureId, proposedRadiusMm })
   }
   if (hasAny(text, ['recommend', 'fix', 'improve', 'change', 'next step', 'what should'])) return Object.freeze({ kind: 'recommendations', query, featureId: selectedFeatureId })
@@ -127,6 +128,12 @@ export function composeInsightResponse(intent, snapshot) {
 
   if (intent.kind === 'empty') return response('Ask about this Part Studio, a finding, or what to change next.', intent.kind)
   if (intent.kind === 'too_long') return response(`Please keep a question under ${MAX_INSIGHT_QUERY_LENGTH} characters so it remains bounded and auditable.`, intent.kind)
+  if (intent.kind === 'simulation') {
+    return response('Stress simulation is separate from a radius preview. Open the Simulation workspace to review the available provider and frozen setup. Live CAD requires a verified export, reviewed material and geometry selections, followed by separate human transfer and compute approvals. Recorded results are not real SimScale evidence; this question launches no upload or solve.', intent.kind)
+  }
+  if (workflow.designSource?.sourceId === 'onshape-live' && workflow.sourceFreshness && workflow.sourceFreshness !== 'checked') {
+    return response('This Onshape snapshot is changed or not currently checked. Prior findings are historical, not current conclusions. Check the source and activate the reviewed revision before continuing.', intent.kind)
+  }
   if (intent.kind === 'authority_boundary') {
     return response(
       'I can inspect, explain, and prepare a non-destructive preview, but I cannot approve a proposal, edit Onshape geometry, release production, contact suppliers, or place an order. Approval remains a visible human action.',
@@ -143,7 +150,7 @@ export function composeInsightResponse(intent, snapshot) {
   }
   if (intent.kind === 'context') {
     return response(
-      `You’re reviewing ${design.name} from the ${source}. BuildReady recognized ${design.features.length} complete measurement groups for ${design.process.label}. The current model is read-only and results are refreshed when the model changes.`,
+      `You’re reviewing ${design.name} from the ${source}. BuildReady recognized ${design.features.length} complete measurement groups for ${design.process.label}. This is a read-only snapshot, not automatic CAD synchronization. Check the revision after edits before using derived evidence.`,
       intent.kind,
       { followUps: ['Run a full manufacturability check', 'How were variables mapped?', 'Show rule coverage'] },
     )

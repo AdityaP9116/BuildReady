@@ -127,7 +127,7 @@ process.stdout.write(JSON.stringify(mapOnshapeToDesign(payload, source, domain.d
         json.dumps(variables),
     )
     result = subprocess.run(
-        ["node", "--experimental-default-type=module", "--input-type=module"],
+        ["node", "--input-type=module"],
         cwd=ROOT,
         input=embedded,
         text=True,

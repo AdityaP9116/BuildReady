@@ -38,9 +38,10 @@ async function request(path, { method = 'GET', body, signal } = {}) {
 
 export const getFeaCapabilities = (signal) => request('/api/fea/capabilities', { signal })
 export const postFeaStudy = (manifest, signal) => request('/api/fea/studies', { method: 'POST', body: manifest, signal })
-export const postActiveFeaSnapshot = (snapshotKey, signal) => request(
+export const prepareFeaStudy = (manifest, signal) => request('/api/fea/prepare', { method: 'POST', body: manifest, signal })
+export const postActiveFeaSnapshot = (snapshotKey, previousSnapshotKey, signal) => request(
   '/api/fea/current-snapshot',
-  { method: 'POST', body: { snapshotKey }, signal },
+  { method: 'POST', body: { snapshotKey, previousSnapshotKey }, signal },
 )
 export const getFeaStudy = (studyId, signal) => request(`/api/fea/studies/${studyId}`, { signal })
 export const approveFeaStudy = (studyId, approval, signal) => request(

@@ -19,8 +19,10 @@ from urllib.parse import parse_qs, urlsplit
 
 try:
     from scripts.fea_service import FeaService, FeaServiceError, error_payload
+    from scripts.evidence_api import dispatch as dispatch_evidence, local_store as local_evidence_store
 except ModuleNotFoundError:  # Direct `python scripts/serve.py` execution.
     from fea_service import FeaService, FeaServiceError, error_payload
+    from evidence_api import dispatch as dispatch_evidence, local_store as local_evidence_store
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +40,7 @@ SECURITY_HEADERS = {
 ONSHAPE_ENDPOINT = "/api/onshape/design"
 FEA_CAPABILITIES_ENDPOINT = "/api/fea/capabilities"
 FEA_STUDIES_ENDPOINT = "/api/fea/studies"
+FEA_PREPARE_ENDPOINT = "/api/fea/prepare"
 FEA_CURRENT_SNAPSHOT_ENDPOINT = "/api/fea/current-snapshot"
 FEA_STUDY_PATTERN = re.compile(
     r"^/api/fea/studies/(?P<study_id>study-[a-f0-9]{16})(?:/(?P<action>approve-and-submit|status|results))?$"
@@ -53,7 +56,7 @@ ONSHAPE_REQUIRED_ENV = (
 
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-MAX_VARIABLES = 40
+MAX_VARIABLES = 100
 MAX_NAME_LENGTH = 64
 MAX_DEPTH = 12
 MAX_ATTEMPTS = 3
@@ -334,6 +337,7 @@ def local_onshape_payload(query: dict[str, list[str]] | None = None) -> tuple[in
         ) if isinstance(microversion_payload, list) else {}
         microversion_id = features.get("microversionId") or selected_version.get("microversion")
     if not isinstance(microversion_id, str) or not ID_PATTERN.fullmatch(microversion_id):
+        release_inflight(cache_key)
         return 502, {
             "ok": False,
             "error": {
@@ -422,6 +426,14 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         request_path = urlsplit(self.path).path
+        if dispatch_evidence(self, 'GET', request_path):
+            return
+        if request_path.startswith('/api/'):
+            try:
+                self.validate_local_api_request()
+            except FeaServiceError as error:
+                self.send_json(*error_payload(error))
+                return
         self.is_onshape_panel = request_path == "/onshape-panel"
         self.is_api_request = request_path == ONSHAPE_ENDPOINT
 
@@ -437,7 +449,10 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if request_path == FEA_CAPABILITIES_ENDPOINT:
-            self.send_json(200, local_fea_service().capabilities())
+            try:
+                self.send_json(200, local_fea_service().capabilities())
+            except FeaServiceError as error:
+                self.send_json(*error_payload(error))
             return
 
         fea_match = FEA_STUDY_PATTERN.fullmatch(request_path)
@@ -468,28 +483,37 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         request_path = urlsplit(self.path).path
+        if dispatch_evidence(self, 'POST', request_path):
+            return
         try:
+            self.validate_local_api_request()
+            if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+                raise FeaServiceError('FEA_INVALID_REQUEST', 'API writes require application/json.', 415)
             payload = self.read_json()
-            if request_path == FEA_STUDIES_ENDPOINT:
-                response = local_fea_service().create_study(payload)
+            if request_path in {FEA_STUDIES_ENDPOINT, FEA_PREPARE_ENDPOINT}:
+                service = local_fea_service()
+                response = service.prepare_study(payload) if request_path == FEA_PREPARE_ENDPOINT else service.create_study(payload)
                 self.send_json(201 if response["created"] else 200, response)
                 return
 
             if request_path == FEA_CURRENT_SNAPSHOT_ENDPOINT:
-                if set(payload) != {"snapshotKey"}:
+                if set(payload) != {"snapshotKey", "previousSnapshotKey"}:
                     raise FeaServiceError(
-                        "FEA_INVALID_REQUEST", "Expected exactly one snapshotKey."
+                        "FEA_INVALID_REQUEST", "Expected snapshotKey and previousSnapshotKey; global invalidation is not supported."
                     )
                 snapshot_key = payload["snapshotKey"]
-                if (
-                    not isinstance(snapshot_key, str)
-                    or not 1 <= len(snapshot_key) <= 240
-                    or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:/@-" for character in snapshot_key)
+                if any(
+                    not isinstance(value, str)
+                    or not 1 <= len(value) <= 240
+                    or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:/@-" for character in value)
+                    for value in payload.values()
                 ):
                     raise FeaServiceError(
                         "FEA_INVALID_REQUEST", "The active snapshot key is invalid."
                     )
-                stale_count = local_fea_service().mark_snapshot_current(snapshot_key)
+                stale_count = local_fea_service().mark_snapshot_current(
+                    snapshot_key, previous_snapshot_key=payload["previousSnapshotKey"]
+                )
                 self.send_json(
                     200,
                     {"ok": True, "snapshotKey": snapshot_key, "staleStudyCount": stale_count},
@@ -506,6 +530,15 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
             raise FeaServiceError("FEA_ROUTE_NOT_FOUND", "The requested FEA endpoint does not exist.", 404)
         except FeaServiceError as error:
             self.send_json(*error_payload(error))
+
+    def validate_local_api_request(self) -> None:
+        """Development-only boundary, not a substitute for hosted authentication."""
+        host = self.headers.get('Host', '')
+        allowed = {f'{name}:{self.server.server_port}' for name in ('127.0.0.1', 'localhost', '[::1]')}
+        origin = self.headers.get('Origin')
+        if (host not in allowed or (origin is not None and origin != f'http://{host}')
+                or self.headers.get('Sec-Fetch-Site') == 'cross-site'):
+            raise FeaServiceError('LOCAL_API_ORIGIN_DENIED', 'This development API requires its local same-origin workspace.', 403)
 
     def read_json(self) -> dict[str, Any]:
         try:
@@ -545,14 +578,36 @@ class SpaRequestHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
 
+class LocalWorkspaceServer(ThreadingHTTPServer):
+    """Enforce seven-day local FEA artifact expiry even without browser traffic."""
+
+    _last_cleanup = 0.0
+
+    def service_actions(self) -> None:
+        now = time.monotonic()
+        if now - self._last_cleanup < 60:
+            return
+        self._last_cleanup = now
+        try:
+            service = local_fea_service()
+            service.store.cleanup_expired(service.clock())
+            if os.environ.get('WORKSPACE_ACCESS_TOKEN'):
+                local_evidence_store().cleanup()
+        except (FeaServiceError, OSError) as error:
+            # No paths, source documents, credentials or provider responses in logs.
+            print(f"FEA cleanup requires attention ({type(error).__name__}).")
+
+
 def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Serve BuildReady locally.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=4173, type=int)
     args = parser.parse_args()
+    if args.host not in {'127.0.0.1', 'localhost', '::1'}:
+        parser.error('This unauthenticated development server must remain loopback-only. Hosted service authentication is required before remote exposure.')
 
-    server = ThreadingHTTPServer((args.host, args.port), SpaRequestHandler)
+    server = LocalWorkspaceServer((args.host, args.port), SpaRequestHandler)
     print(f"BuildReady available at http://{args.host}:{args.port}")
     configured = all(os.environ.get(name) for name in ONSHAPE_REQUIRED_ENV)
     print(f"Onshape source: {'configured' if configured else 'not configured (fixture-only mode)'}")

@@ -10,6 +10,7 @@ export class WorkflowRuleError extends Error {
 }
 
 export function revisionPrecondition(fixture) {
+  if (fixture.sourceSnapshotKey) return fixture.sourceSnapshotKey
   return `${fixture.designId}/${fixture.revisionId}@${fixture.fixtureVersion}`
 }
 

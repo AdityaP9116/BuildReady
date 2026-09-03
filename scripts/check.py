@@ -57,11 +57,13 @@ def main() -> None:
             "--test",
             str(ROOT / "tests" / "js" / "onshape-function-contract.mjs"),
             str(ROOT / "tests" / "js" / "fea-validation.mjs"),
+            str(ROOT / "tests" / "js" / "source-foundation.mjs"),
+            str(ROOT / "tests" / "js" / "fea-state-foundation.mjs"),
         ],
         cwd=ROOT,
         check=True,
     )
-    for script in ("app.js", "webmcp.js", "fea-state.js", "fea-client.js", "fea-validation.js"):
+    for script in ("app.js", "webmcp.js", "fea-state.js", "fea-client.js", "fea-validation.js", "sourcing.js"):
         subprocess.run(["node", "--check", str(ROOT / "web" / script)], cwd=ROOT, check=True)
 
 

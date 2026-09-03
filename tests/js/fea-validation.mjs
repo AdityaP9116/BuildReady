@@ -74,4 +74,9 @@ test('verification requires numerical, topology, and read-back checks together',
   assert.equal(evaluateVerificationEvidence(passing, domain.verificationThresholds).verified, true)
   assert.equal(evaluateVerificationEvidence({ ...passing, reactionBalanceErrorPercent: 1.01 }, domain.verificationThresholds).verified, false)
   assert.equal(evaluateVerificationEvidence({ ...passing, criticalReadBackMatches: false }, domain.verificationThresholds).verified, false)
+  for (const value of [null, undefined, '0', false, -1, NaN, Infinity]) {
+    assert.equal(evaluateVerificationEvidence({ ...passing, analyticalStressErrorPercent: value }, domain.verificationThresholds).verified, false)
+  }
+  assert.equal(evaluateVerificationEvidence({ ...passing, meshDisplacementChangePercent: domain.verificationThresholds.meshDisplacementChangePercent }, domain.verificationThresholds).verified, false)
+  assert.equal(evaluateVerificationEvidence({ ...passing, meshReviewedStressChangePercent: domain.verificationThresholds.meshReviewedStressChangePercent }, domain.verificationThresholds).verified, false)
 })
