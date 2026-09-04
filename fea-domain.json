@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "fea-domain-1.0.0",
+  "scope": "Controlled linear-static demonstration contract; not production certification guidance.",
+  "analysisType": "linear_static",
+  "template": {
+    "templateVersion": "static-bracket-force-1.0.0",
+    "provider": "provider-neutral",
+    "solverModel": "linear-elastic-small-displacement",
+    "elementOrder": "second",
+    "resultControls": [
+      "raw-maximum-von-mises-stress",
+      "reviewed-region-von-mises-stress",
+      "maximum-displacement-magnitude",
+      "reaction-force-sum"
+    ]
+  },
+  "materials": {
+    "al-6061-t6-demo": {
+      "label": "6061-T6 aluminum (controlled demonstration properties)",
+      "elasticModulusPa": 68900000000,
+      "poissonRatio": 0.33,
+      "densityKgM3": 2700,
+      "yieldStrengthPa": 276000000,
+      "propertySource": "controlled-material-fixture-1.0.0",
+      "reviewedSourceRequiredForProduction": true
+    }
+  },
+  "loadPolicy": {
+    "supportedType": "force",
+    "supportedUnits": ["N", "kN"],
+    "minimumN": 0.001,
+    "maximumN": 100000
+  },
+  "selectionContract": {
+    "body": "NS_BODY",
+    "fixed": "NS_FIXED",
+    "load": "NS_LOAD",
+    "monitor": "NS_MONITOR"
+  },
+  "meshPresets": {
+    "medium": {
+      "label": "Medium verification mesh",
+      "elementOrder": "second",
+      "relativeSizing": 5,
+      "purpose": "baseline"
+    },
+    "fine": {
+      "label": "Fine verification mesh",
+      "elementOrder": "second",
+      "relativeSizing": 7,
+      "purpose": "convergence-check"
+    }
+  },
+  "requirementLimits": {
+    "minimumSafetyFactor": { "minimum": 1, "maximum": 10 },
+    "maximumDisplacementMm": { "minimum": 0.001, "maximum": 1000 }
+  },
+  "verificationThresholds": {
+    "analyticalStressErrorPercent": 5,
+    "analyticalDisplacementErrorPercent": 5,
+    "manualParityErrorPercent": 1,
+    "reactionBalanceErrorPercent": 1,
+    "meshDisplacementChangePercent": 2,
+    "meshReviewedStressChangePercent": 5
+  },
+  "analyticalBenchmark": {
+    "benchmarkId": "cantilever-rectangular-end-force-1.0.0",
+    "lengthMm": 100,
+    "widthMm": 20,
+    "heightMm": 10,
+    "forceN": 100,
+    "elasticModulusNPerMm2": 68900,
+    "expectedMaximumBendingStressMpa": 30,
+    "expectedTipDisplacementMm": 0.2902757619738752,
+    "stressEvaluationNote": "Evaluate away from the idealized fixed-edge singularity."
+  },
+  "artifactPolicy": {
+    "retentionDays": 7,
+    "privateOnly": true,
+    "forbiddenDestinations": ["browser-storage", "git", "github", "public-bucket"]
+  },
+  "authorityPolicy": {
+    "studyPreparation": "agent-or-human",
+    "runApproval": "visible-human-only",
+    "engineeringDisposition": "visible-human-only",
+    "liveProviderRequiresAuthentication": true
+  }
+}

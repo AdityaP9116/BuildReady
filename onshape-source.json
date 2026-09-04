@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1.0.0",
+  "sourceId": "onshape-live",
+  "label": "Onshape live document",
+  "scope": "Optional external design source. The controlled fixture remains the default judge path.",
+  "proxyEndpoint": "/api/onshape/design",
+  "documentReference": {
+    "note": "Server-side credentials resolve the document. These identifiers are public and safe to ship.",
+    "documentUrlTemplate": "https://cad.onshape.com/documents/{documentId}/w/{workspaceId}/e/{elementId}"
+  },
+  "discovery": {
+    "strategy": "semantic-token-scoring",
+    "minimumConfidence": "medium",
+    "partialCoverage": true,
+    "note": "BuildReady inventories every literal length variable and infers manufacturing roles from names and feature provenance. No exact variable names are required. Ambiguous values are left unmapped."
+  },
+  "measurementGroups": [
+    {
+      "featureId": "inside-pocket-corner",
+      "label": "Inside pocket corner",
+      "ruleId": "CNC-R001",
+      "requiredReview": "Identify the smallest concave internal corner and proposed cutter radius. A fillet may be external and is not automatically a pocket corner.",
+      "dimensions": { "insideRadiusMm": "cornerRadius", "selectedCutterRadiusMm": "cutterRadius" }
+    },
+    {
+      "featureId": "deep-pocket",
+      "label": "Deep pocket",
+      "ruleId": "CNC-R002",
+      "requiredReview": "Measure depth and minimum accessible width of the SAME pocket in the final solid; a remove-extrude depth alone is insufficient.",
+      "dimensions": { "depthMm": "pocketDepth", "minWidthMm": "pocketWidth" }
+    },
+    {
+      "featureId": "thin-wall",
+      "label": "Thin wall",
+      "ruleId": "CNC-R003",
+      "requiredReview": "Measure the minimum remaining wall or rib thickness in the final solid; extrusion height is not wall thickness.",
+      "dimensions": { "thicknessMm": "wallThickness" }
+    },
+    {
+      "featureId": "deep-drilled-hole",
+      "label": "Deep drilled hole",
+      "ruleId": "CNC-R004",
+      "requiredReview": "Identify a drilled hole and measure its depth and diameter together; distinguish blind/through holes and counterbores.",
+      "dimensions": { "depthMm": "deepHoleDepth", "diameterMm": "deepHoleDiameter" }
+    },
+    {
+      "featureId": "mounting-hole-tolerance",
+      "label": "Mounting-hole tolerance",
+      "ruleId": "CNC-R005",
+      "requiredReview": "Confirm the mounting-hole diameter and drawing-specified tolerance. Nominal CAD geometry does not specify a manufacturing tolerance.",
+      "dimensions": { "diameterMm": "mountHoleDiameter", "tolerancePlusMinusMm": "mountTolerance" }
+    }
+  ],
+  "reviewContext": {
+    "processId": "cnc-screening",
+    "processLabel": "CNC milling screening",
+    "material": "not-provided-by-variable-api",
+    "quantity": "not-provided-by-variable-api"
+  },
+  "writeBackPolicy": {
+    "policyVersion": "onshape-writeback-1.0.0",
+    "semanticRole": "cornerRadius",
+    "requiresHumanDecision": "approved",
+    "targetMode": "new-branch-workspace-only",
+    "forbiddenTargets": ["main-workspace", "released-version"],
+    "note": "A write is only ever prepared after a visible human approval and is never applied to the source workspace."
+  }
+}

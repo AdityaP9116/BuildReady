@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "1.0.0",
+  "ruleSetVersion": "cnc-dfm-1.1.0",
+  "ruleSetScope": "Configurable CNC screening thresholds; final machining decisions require engineering review.",
+  "proposalPolicy": {
+    "policyVersion": "radius-preview-1.0.0",
+    "featureId": "inside-pocket-corner",
+    "ruleId": "CNC-R001",
+    "minimumRadiusMm": 3.5,
+    "maximumRadiusMm": 5.0,
+    "recommendedRadiusMm": 3.5,
+    "approvalMode": "visible-human-only",
+    "geometryMode": "non-destructive-session-preview"
+  },
+  "design": {
+    "designId": "BRKT-001",
+    "revisionId": "B",
+    "fixtureVersion": "1.0.0",
+    "name": "CNC Mounting Bracket",
+    "material": { "id": "al-6061-t6", "label": "6061-T6 aluminum" },
+    "process": { "id": "cnc-mill-3-axis", "label": "Three-axis CNC milling" },
+    "quantity": 1000,
+    "units": "millimeters",
+    "features": [
+      {
+        "featureId": "inside-pocket-corner",
+        "featureType": "internal_corner",
+        "label": "Inside pocket corner",
+        "dimensions": { "insideRadiusMm": 1.0, "selectedCutterRadiusMm": 3.0 },
+        "selected": true,
+        "objectReference": "mesh://BRKT-001-B/pocket",
+        "applicableRuleIds": ["CNC-R001"],
+        "highlightIds": ["highlight-pocket-corners"],
+        "revisionProvenance": "BRKT-001/B"
+      },
+      {
+        "featureId": "deep-pocket",
+        "featureType": "pocket",
+        "label": "Deep center pocket",
+        "dimensions": { "depthMm": 24.0, "minWidthMm": 6.0 },
+        "selected": false,
+        "objectReference": "mesh://BRKT-001-B/pocket",
+        "applicableRuleIds": ["CNC-R002"],
+        "highlightIds": ["highlight-deep-pocket"],
+        "revisionProvenance": "BRKT-001/B"
+      },
+      {
+        "featureId": "thin-wall",
+        "featureType": "wall",
+        "label": "Pocket side wall",
+        "dimensions": { "thicknessMm": 0.8 },
+        "selected": false,
+        "objectReference": "mesh://BRKT-001-B/wall-right",
+        "applicableRuleIds": ["CNC-R003"],
+        "highlightIds": ["highlight-thin-wall"],
+        "revisionProvenance": "BRKT-001/B"
+      },
+      {
+        "featureId": "deep-drilled-hole",
+        "featureType": "drilled_hole",
+        "label": "Deep drilled hole",
+        "dimensions": { "depthMm": 30.0, "diameterMm": 5.0 },
+        "selected": false,
+        "objectReference": "mesh://BRKT-001-B/hole-deep",
+        "applicableRuleIds": ["CNC-R004"],
+        "highlightIds": ["highlight-deep-hole"],
+        "revisionProvenance": "BRKT-001/B"
+      },
+      {
+        "featureId": "mounting-hole-tolerance",
+        "featureType": "toleranced_hole",
+        "label": "Tightly toleranced mounting hole",
+        "dimensions": { "diameterMm": 8.0, "tolerancePlusMinusMm": 0.02 },
+        "selected": false,
+        "objectReference": "mesh://BRKT-001-B/hole-mounting",
+        "applicableRuleIds": ["CNC-R005"],
+        "highlightIds": ["highlight-mounting-hole"],
+        "revisionProvenance": "BRKT-001/B"
+      }
+    ]
+  },
+  "rules": [
+    {
+      "ruleId": "CNC-R001",
+      "version": "1.0.0",
+      "title": "Inside corner may be too small for the selected cutter",
+      "severity": "high",
+      "featureId": "inside-pocket-corner",
+      "calculation": { "kind": "minimum", "measurementKey": "insideRadiusMm", "threshold": 3.5, "unit": "mm" },
+      "consequence": "The inside radius is below the configured cutter-clearance limit and may require a smaller tool or a geometry change.",
+      "recommendation": "Increase the inside corner radius to at least 3.5 mm, or select a smaller cutter.",
+      "evidenceReferences": ["fixture://BRKT-001/B/features/inside-pocket-corner", "ruleset://cnc-dfm-1.1.0/CNC-R001"]
+    },
+    {
+      "ruleId": "CNC-R002",
+      "version": "1.0.0",
+      "title": "Pocket may be too deep for its width",
+      "severity": "medium",
+      "featureId": "deep-pocket",
+      "calculation": { "kind": "maximum_ratio", "numeratorKey": "depthMm", "denominatorKey": "minWidthMm", "threshold": 3.0, "unit": "ratio" },
+      "consequence": "A narrow, deep pocket can increase tool deflection and make chip removal or tool access more difficult.",
+      "recommendation": "Reduce pocket depth, increase its minimum width, or review a different machining strategy.",
+      "evidenceReferences": ["fixture://BRKT-001/B/features/deep-pocket", "ruleset://cnc-dfm-1.1.0/CNC-R002"]
+    },
+    {
+      "ruleId": "CNC-R003",
+      "version": "1.0.0",
+      "title": "Wall may be too thin for stable machining",
+      "severity": "high",
+      "featureId": "thin-wall",
+      "calculation": { "kind": "minimum", "measurementKey": "thicknessMm", "threshold": 1.5, "unit": "mm" },
+      "consequence": "A thin wall can be more susceptible to deflection, chatter, or damage during machining.",
+      "recommendation": "Increase the wall thickness to at least 1.5 mm or request an engineering review.",
+      "evidenceReferences": ["fixture://BRKT-001/B/features/thin-wall", "ruleset://cnc-dfm-1.1.0/CNC-R003"]
+    },
+    {
+      "ruleId": "CNC-R004",
+      "version": "1.0.0",
+      "title": "Hole may be too deep for its diameter",
+      "severity": "medium",
+      "featureId": "deep-drilled-hole",
+      "calculation": { "kind": "maximum_ratio", "numeratorKey": "depthMm", "denominatorKey": "diameterMm", "threshold": 4.0, "unit": "ratio" },
+      "consequence": "The hole may require specialized drilling cycles, chip evacuation, or additional setup in this model.",
+      "recommendation": "Reduce the hole depth, increase its diameter, or review a deep-hole drilling process.",
+      "evidenceReferences": ["fixture://BRKT-001/B/features/deep-drilled-hole", "ruleset://cnc-dfm-1.1.0/CNC-R004"]
+    },
+    {
+      "ruleId": "CNC-R005",
+      "version": "1.0.0",
+      "title": "Mounting-hole tolerance may be difficult to hold",
+      "severity": "medium",
+      "featureId": "mounting-hole-tolerance",
+      "calculation": { "kind": "minimum", "measurementKey": "tolerancePlusMinusMm", "threshold": 0.05, "unit": "mm" },
+      "consequence": "The tolerance may add inspection, finishing, and cost without a documented functional need.",
+      "recommendation": "Relax the tolerance to ±0.05 mm or record the functional requirement for supplier review.",
+      "evidenceReferences": ["fixture://BRKT-001/B/features/mounting-hole-tolerance", "ruleset://cnc-dfm-1.1.0/CNC-R005"]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0.0",
+  "scope": "Controlled fictional supplier fixtures for the BuildReady demonstration; not commercial offers.",
+  "supportedQuantities": [250, 500, 1000, 2500],
+  "suppliers": [
+    {
+      "supplierId": "axisworks",
+      "name": "AxisWorks",
+      "fictional": true,
+      "currency": "USD",
+      "toolingCost": 480,
+      "leadTimeDays": 18,
+      "unitPrices": { "250": 18.4, "500": 14.2, "1000": 11.6, "2500": 9.4 },
+      "assumptions": [
+        "6061-T6 stock and standard domestic freight are included.",
+        "Three-axis CNC milling uses the supplied controlled geometry.",
+        "Standard dimensional inspection is included; certification is excluded."
+      ],
+      "dfmNotes": [
+        "An approved 3.5 mm radius preview reduces small-tool dependency in the modeled pocket.",
+        "The deep drilled hole and thin wall remain review items before production release."
+      ],
+      "factors": { "cost": "best_value", "speed": "standard", "risk": "moderate" }
+    },
+    {
+      "supplierId": "rapidmill",
+      "name": "RapidMill",
+      "fictional": true,
+      "currency": "USD",
+      "toolingCost": 350,
+      "leadTimeDays": 11,
+      "unitPrices": { "250": 20.9, "500": 16.1, "1000": 12.85, "2500": 10.55 },
+      "assumptions": [
+        "6061-T6 stock and expedited scheduling are included.",
+        "Three-axis CNC milling uses one dedicated fixture setup.",
+        "First-article inspection is included; material certification is excluded."
+      ],
+      "dfmNotes": [
+        "The modeled radius change supports the shorter quoted schedule when approved.",
+        "Tight mounting-hole tolerance may require reaming and added inspection."
+      ],
+      "factors": { "cost": "premium", "speed": "fastest", "risk": "moderate" }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "fea-result-1.0.0",
+  "fixtureVersion": "recorded-fea-1.0.0",
+  "status": "complete",
+  "currentness": "current",
+  "source": {
+    "snapshotKey": "replaced-at-runtime",
+    "mode": "controlled-recorded-fixture"
+  },
+  "solver": {
+    "provider": "recorded",
+    "live": false,
+    "analysisType": "linear-static",
+    "templateVersion": "static-bracket-force-1.0.0",
+    "converged": true,
+    "warnings": [
+      "Controlled synthetic evidence: this is not a live SimScale result and is not numerically verified."
+    ]
+  },
+  "metrics": {
+    "rawMaximumVonMisesStress": {
+      "value": 141.3,
+      "unit": "MPa",
+      "usableForAcceptance": false,
+      "location": "fixed-support edge"
+    },
+    "reviewedRegionVonMisesStress": {
+      "value": 136.1,
+      "unit": "MPa",
+      "selection": "NS_MONITOR",
+      "usableForAcceptance": false
+    },
+    "maximumDisplacement": {
+      "value": 0.42,
+      "unit": "mm"
+    },
+    "estimatedFactorOfSafety": {
+      "value": 2.03,
+      "basis": "controlled-yield/reviewed-region-von-mises",
+      "usableForAcceptance": false
+    },
+    "reactionForceBalanceErrorPercent": 0.4
+  },
+  "verification": {
+    "status": "not-verified-live",
+    "analyticalBenchmarkPassed": false,
+    "manualParityPassed": false,
+    "meshConverged": false,
+    "possibleSingularityAtRawMaximum": true
+  },
+  "assessment": {
+    "outcome": "indeterminate",
+    "failedRequirements": [],
+    "limitations": [
+      "Recorded-mode metrics exercise the workflow only and cannot support an engineering disposition."
+    ]
+  },
+  "artifacts": []
+}

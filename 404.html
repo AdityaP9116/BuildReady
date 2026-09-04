@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="BuildReady is a WebMCP-powered manufacturing-readiness workspace."
+    />
+    <title>BuildReady</title>
+    <link rel="stylesheet" href="./styles.css?v=20260903-7" />
+    <script src="./app.js?v=20260903-7" type="module"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="site-header">
+        <a class="brand" href="./design" data-route aria-label="BuildReady home">
+          <span class="brand-mark" aria-hidden="true">BR</span>
+          <span>
+            <strong>BuildReady</strong>
+            <small>Manufacturing readiness, with evidence</small>
+          </span>
+        </a>
+
+        <nav aria-label="Primary navigation">
+          <a class="nav-link" href="./design" data-route>Design</a>
+          <a class="nav-link" href="./simulation" data-route>Simulation</a>
+          <a class="nav-link" href="./suppliers" data-route>Suppliers</a>
+          <a class="nav-link" href="./sourcing.html">Private quotes</a>
+          <a class="nav-link" href="./review" data-route>Review</a>
+          <a class="nav-link" href="./about" data-route>About</a>
+        </nav>
+
+        <div class="agent-status">
+          <div class="protocol-status" id="webmcp-status">
+            <span aria-hidden="true"></span>
+            <span>
+              <strong>WebMCP</strong>
+              <small>Compatibility mode</small>
+            </span>
+          </div>
+          <span class="tool-count" id="header-tool-count">0 tools</span>
+          <span class="workflow-progress" id="workflow-progress" aria-live="polite">0/5 complete</span>
+          <button type="button" class="quiet-button header-reset" id="global-reset-button">Reset</button>
+        </div>
+      </header>
+
+      <main id="app" tabindex="-1"></main>
+    </div>
+    <noscript>BuildReady requires JavaScript for client-side navigation.</noscript>
+  </body>
+</html>

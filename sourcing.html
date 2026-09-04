@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BuildReady — Private supplier evidence</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/sourcing.css" />
+  <script type="module" src="/sourcing.js"></script>
+</head>
+<body>
+  <main class="sourcing-workspace">
+    <a href="/suppliers">Back to the demonstration workspace</a>
+    <h1>Private supplier evidence</h1>
+    <p>Preserve an original quote, review what it actually covers, and compare compatible offers. No supplier is contacted and no purchase is made here. Simulation completion is not required.</p>
+    <p id="capabilities" role="status">Checking the local evidence service…</p>
+    <section class="proposal-card">
+      <h2>Unlock local evidence</h2>
+      <p>This workspace requires the access token configured locally by the operator. Do not paste it into chat. Uploaded documents are private to this local operator account.</p>
+      <form id="unlock"><label>Local access token <input name="accessToken" type="password" autocomplete="off" required /></label><button>Unlock</button></form>
+      <button id="lock" type="button" hidden>Lock workspace</button>
+    </section>
+    <div id="private-content" hidden>
+      <section class="proposal-card">
+        <h2>1. Choose a project and retention policy</h2>
+        <label>Existing project <select id="workspaces"><option value="">Choose a project</option></select></label>
+        <form id="new-workspace">
+          <label>New project name <input name="name" maxlength="100" required /></label>
+          <label>Keep supplier originals for this many days <input name="quoteDays" type="number" min="1" max="365" value="30" required /></label>
+          <label><input name="accepted" type="checkbox" required /> I accept seven-day local CAD retention and the quote period above, starting at ingestion. Keep metadata/review history until explicit project deletion. This does not delete copies held by suppliers or downloaded to my computer.</label>
+          <button>Create private project</button>
+        </form>
+      </section>
+      <section class="proposal-card">
+        <h2>2. Preserve original files</h2>
+        <p>Files stay on this computer. PDF signatures are checked, but this is not a malware scanner; only open supplier files you trust. Downloads use attachment mode, not an embedded active document viewer.</p>
+        <form id="upload">
+          <label>Evidence category <select name="kind"><option value="step">STEP CAD, up to 25 MiB</option><option value="supplier_pdf">Supplier PDF, up to 10 MiB</option><option value="supplier_json">Supplier JSON upload, up to 1 MiB (not an authorized API response)</option></select></label>
+          <label>Original file <input name="file" type="file" required /></label>
+          <button>Preserve original locally</button>
+        </form>
+        <ul id="artifacts"></ul>
+      </section>
+      <section class="proposal-card">
+        <h2>3. Prepare the manufacturing request</h2>
+        <p>Manually uploaded STEP is linked by your attestation, not by a verified Onshape export. An approved radius preview does not change this file. Empty requirements remain unknown.</p>
+        <form id="rfq-form">
+          <div class="sourcing-grid" id="rfq-fields"></div>
+          <label>STEP original <select name="stepArtifactId" id="step-select" required></select></label>
+          <label><input name="defaultConfiguration" type="checkbox" required /> This request uses the default configuration and exactly the named part.</label>
+          <button>Prepare local request draft</button>
+        </form>
+        <label>Request history <select id="requests"><option value="">Choose a request</option></select></label>
+        <button id="review-rfq" type="button">Review exact request for freezing</button>
+      </section>
+      <section class="proposal-card">
+        <h2>Preferred suppliers</h2>
+        <p>Private address book only. Saving a supplier does not verify them, create a quote, or authorize contact. Edits preserve history.</p>
+        <form id="supplier-form">
+          <input name="supplierId" type="hidden" /><input name="expectedVersion" type="hidden" />
+          <label>Name <input name="name" required maxlength="200" /></label>
+          <label>Contact details <input name="contact" maxlength="400" /></label>
+          <label>Website <input name="website" type="url" maxlength="400" /></label>
+          <label><input name="active" type="checkbox" checked /> Active supplier</label>
+          <button>Save supplier</button><button type="reset">Start new entry</button>
+        </form>
+        <div id="supplier-directory"></div>
+      </section>
+      <section class="proposal-card">
+        <h2>4. Transcribe a supplier quotation</h2>
+        <p>Use the original beside this form. This saves a pending draft; supplier-confirmed scope means the retained document explicitly identifies the same scope. It does not authenticate the document author.</p>
+        <form id="quote-form">
+          <label>Supplier original <select name="artifactId" id="quote-source-select" required></select></label>
+          <div class="sourcing-grid" id="quote-fields"></div>
+          <label>Offer type <select name="offerType"><option value="unknown">Unknown</option><option value="supplier_quote">Supplier quotation</option><option value="indicative_estimate">Indicative estimate</option></select></label>
+          <label>Design and requirements match <select name="scopeMatch"><option value="unresolved">Unresolved</option><option value="user_attested">I attest the association</option><option value="supplier_confirmed">Explicitly confirmed in supplier evidence</option></select></label>
+          <label><input name="independence" type="checkbox" /> I checked the supplier's identity and independence; multiple options from one supplier are not independent offers.</label>
+          <label>Deviations (one per line; leave empty only if none)<textarea name="deviations" maxlength="4000"></textarea></label>
+          <h3>Costs beyond unit price</h3>
+          <div id="charges"></div>
+          <h3>Field-by-field source references</h3>
+          <p>For each known term, enter its page/section or JSON Pointer and the original wording. Unknown fields may stay blank. These references are human-attested, not parser-verified.</p>
+          <div id="citations"></div>
+          <button>Save pending transcription</button>
+        </form>
+      </section>
+      <section class="proposal-card">
+        <h2>5. Review and compare preserved offers</h2>
+        <p>Select exact versions. Unknown shipping or tax prevents a final delivered-cost ranking. Currency conversion, purchases and automated supplier selection are not supported.</p>
+        <button id="refresh" type="button">Refresh saved history</button>
+        <div id="quotes"></div>
+        <button id="compare" type="button">Assess selected offers against this request</button>
+        <button id="download-report" type="button" disabled>Download assessment JSON</button>
+      </section>
+      <section id="approval" class="proposal-card" hidden>
+        <h2>Human review of frozen server values</h2>
+        <p>The action below applies only to this exact saved content. Changing the draft invalidates it. A request freeze is not a supplier handoff, and quote review is not a purchase.</p>
+        <pre id="approval-content"></pre>
+        <label><input type="checkbox" id="approval-ack" /> I reviewed this source association and these exact terms against the original, including missing information.</label>
+        <button id="confirm" type="button">Confirm this exact review</button>
+        <button id="cancel" type="button">Cancel</button>
+      </section>
+    </div>
+    <section class="proposal-card"><h2>Current evidence and result</h2><pre id="output" role="status">No private evidence loaded.</pre></section>
+  </main>
+</body>
+</html>
