@@ -31,7 +31,7 @@ class ProductPolishTests(unittest.TestCase):
         self.assertIn("global-reset-button", parser.ids)
         self.assertIn("globalResetButton.addEventListener", self.app)
         self.assertIn("resetDemoState()", self.app)
-        self.assertIn("window.history.pushState({}, '', '/design')", self.app)
+        self.assertIn("window.history.pushState({}, '', appPath('/design'))", self.app)
 
     def test_onboarding_explains_the_complete_five_stage_path(self) -> None:
         for stage in (

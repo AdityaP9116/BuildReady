@@ -53,6 +53,12 @@ const routes = {
   '/onshape-panel': renderOnshapePanel,
 }
 
+const APP_BASE_PATH = new URL('.', import.meta.url).pathname.replace(/\/$/, '')
+
+function appPath(path) {
+  return `${APP_BASE_PATH}${path}`
+}
+
 const app = document.querySelector('#app')
 const webMcpStatus = document.querySelector('#webmcp-status')
 const headerToolCount = document.querySelector('#header-tool-count')
@@ -111,7 +117,7 @@ function extensionRouteHref(path) {
   const params = new URLSearchParams(window.location.search)
   params.set('embedded', 'onshape')
   const extensionPath = path === '/design' ? '/onshape-panel' : path
-  return `${extensionPath}?${params.toString()}`
+  return `${appPath(extensionPath)}?${params.toString()}`
 }
 
 function renderExtensionNavigation(activePath) {
@@ -454,7 +460,7 @@ function renderSimulation() {
       </section>
       ${embedded
         ? '<aside class="compatibility-note"><strong>Revision-bound simulation</strong><span>Prepare and inspect recorded studies or load exact retained evidence here without leaving Onshape. Live provider execution still requires explicit private operator approval, and no result grants engineering approval.</span></aside>'
-        : '<aside class="compatibility-note"><strong>Real SimScale operator workflow</strong><span>The controls below remain the recorded demonstration. Use the separate <a href="/live-demo.html">live commissioning workspace</a> for frozen STEP import, reviewed topology, bounded mesh/solve execution, cancellation and actual CSV metrics. Live numerical acceptance is still required.</span></aside>'}
+        : `<aside class="compatibility-note"><strong>Real SimScale operator workflow</strong><span>The controls below remain the recorded demonstration. Use the separate <a href="${appPath('/live-demo.html')}">live commissioning workspace</a> for frozen STEP import, reviewed topology, bounded mesh/solve execution, cancellation and actual CSV metrics. Live numerical acceptance is still required.</span></aside>`}
       <section class="fea-layout">
         <section id="live-simulation-evidence" class="proposal-card"></section>
         <form class="proposal-card fea-study-form" id="fea-study-form">
@@ -635,7 +641,7 @@ function renderSuppliers() {
           <h2>Your preferred suppliers</h2>
           <p>A reusable preferred-supplier directory is planned. The private workspace already accepts supplier identities and original quotations manually; these fictional cards are never imported as real evidence.</p>
           <p>Have an actual supplier document? The private evidence workspace keeps real requests and quotations separate from this demonstration and does not require completed FEA.</p>
-          <a class="button-link" href="/sourcing.html">Open private supplier evidence</a>
+          <a class="button-link" href="${appPath('/sourcing.html')}">Open private supplier evidence</a>
           <p>No supplier has been contacted. These placeholders do not advance the reviewed manufacturing, simulation or quotation checkpoints.</p>
           <a class="button-link" href="/design" data-route>Return to design</a>
         </section>
@@ -817,10 +823,14 @@ function renderNotFound() {
 }
 
 function normalizePath(pathname) {
-  if (pathname.length > 1 && pathname.endsWith('/')) {
-    return pathname.slice(0, -1)
+  let path = pathname
+  if (APP_BASE_PATH && (path === APP_BASE_PATH || path.startsWith(`${APP_BASE_PATH}/`))) {
+    path = path.slice(APP_BASE_PATH.length) || '/'
   }
-  return pathname
+  if (path.length > 1 && path.endsWith('/')) {
+    return path.slice(0, -1)
+  }
+  return path
 }
 
 function measurementLabel(key) {
@@ -1735,7 +1745,7 @@ async function renderRoute() {
   let path = normalizePath(window.location.pathname)
 
   if (path === '/') {
-    window.history.replaceState({}, '', '/design')
+    window.history.replaceState({}, '', appPath('/design'))
     path = '/design'
   }
 
@@ -1803,7 +1813,7 @@ document.addEventListener('click', (event) => {
   const route = normalizePath(link.pathname)
   const destination = isOnshapeExtensionMode() && routes[route]
     ? extensionRouteHref(route)
-    : link.href
+    : appPath(route)
   window.history.pushState({}, '', destination)
   void renderRoute()
 })
@@ -1817,7 +1827,7 @@ window.addEventListener('buildready:navigate', (event) => {
     void renderRoute()
     return
   }
-  window.history.pushState({}, '', route)
+  window.history.pushState({}, '', appPath(route))
   void renderRoute()
 })
 window.addEventListener('buildready:statechange', updateDiagnostics)
@@ -1834,7 +1844,7 @@ globalResetButton.addEventListener('click', () => {
   if (isOnshapeExtensionMode()) {
     window.history.pushState({}, '', extensionRouteHref('/onshape-panel'))
   } else {
-    window.history.pushState({}, '', '/design')
+    window.history.pushState({}, '', appPath('/design'))
   }
   void renderRoute()
 })

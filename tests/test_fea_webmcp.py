@@ -20,8 +20,9 @@ class FeaWebMcpTests(unittest.TestCase):
         cls.fixture = (ROOT / "web" / "fea-recorded-result.json").read_text(encoding="utf-8")
 
     def test_simulation_route_and_five_stage_progress_are_visible(self) -> None:
-        self.assertIn('href="/simulation" data-route', self.index)
+        self.assertIn('href="./simulation" data-route', self.index)
         self.assertIn("'/simulation': renderSimulation", self.app)
+        self.assertIn("const APP_BASE_PATH = new URL('.', import.meta.url)", self.app)
         self.assertIn('id="onboarding-simulation"', self.app)
         self.assertIn("/5 complete", self.app)
 
