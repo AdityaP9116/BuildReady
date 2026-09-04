@@ -38,6 +38,7 @@ class ProductPolishTests(unittest.TestCase):
             "onboarding-inspection",
             "onboarding-decision",
             "onboarding-simulation",
+            "SimScale handoff",
             "onboarding-quotes",
             "onboarding-package",
         ):
@@ -89,6 +90,27 @@ class ProductPolishTests(unittest.TestCase):
         self.assertIn(".insight-assistant", self.styles)
         self.assertIn(".insight-message[data-role='user']", self.styles)
         self.assertIn("html.onshape-embedded-root", self.styles)
+
+    def test_onshape_extension_keeps_workflows_inside_the_panel(self) -> None:
+        for marker in (
+            "BuildReady extension workflows",
+            "renderExtensionNavigation('/onshape-panel')",
+            "renderExtensionNavigation('/simulation')",
+            "renderExtensionNavigation('/review')",
+            "renderEmbeddedSimulation()",
+            "renderEmbeddedEvidence()",
+            "params.set('embedded', 'onshape')",
+            "path === '/design' ? '/onshape-panel' : path",
+            "Return to Review to recheck and activate a changed revision",
+            "Live CAD connected. Review material, supports, and load region before creating a study.",
+            "no solve run",
+        ):
+            self.assertIn(marker, self.app)
+        self.assertNotIn('id="panel-open-workspace"', self.app)
+        self.assertNotIn('Open the full workspace', self.app)
+        self.assertNotIn("['/suppliers', 'Suppliers']", self.app)
+        self.assertIn(".panel-workflow-nav", self.styles)
+        self.assertIn(".extension-study-card", self.styles)
 
 
 if __name__ == "__main__":

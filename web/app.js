@@ -101,6 +101,135 @@ function pageIntro(eyebrow, title, description, aside = '') {
   `
 }
 
+function isOnshapeExtensionMode() {
+  return document.body.classList.contains('onshape-embedded')
+    || normalizePath(window.location.pathname) === '/onshape-panel'
+    || new URLSearchParams(window.location.search).get('embedded') === 'onshape'
+}
+
+function extensionRouteHref(path) {
+  const params = new URLSearchParams(window.location.search)
+  params.set('embedded', 'onshape')
+  const extensionPath = path === '/design' ? '/onshape-panel' : path
+  return `${extensionPath}?${params.toString()}`
+}
+
+function renderExtensionNavigation(activePath) {
+  if (!isOnshapeExtensionMode()) return ''
+  const destinations = [
+    ['/onshape-panel', 'Review'],
+    ['/simulation', 'Simulation'],
+    ['/review', 'Evidence'],
+  ]
+  return `<nav class="panel-workflow-nav" aria-label="BuildReady extension workflows">
+    ${destinations.map(([path, label]) => `<a class="${path === activePath ? 'active' : ''}" href="${extensionRouteHref(path)}" data-route>${label}</a>`).join('')}
+  </nav>`
+}
+
+function renderEmbeddedSimulation() {
+  return `
+    <div class="extension-workflow-page extension-simulation">
+      ${renderExtensionNavigation('/simulation')}
+      <header class="extension-page-heading">
+        <div><p class="eyebrow">Simulation</p><h1>Static stress study</h1><p>Review a revision-bound load case before any provider submission.</p></div>
+        <span class="stage-status" id="fea-mode-badge">no solve run</span>
+      </header>
+
+      <section class="extension-sim-status" aria-labelledby="fea-mode-title">
+        <div><span>Active revision</span><code id="fea-snapshot-key"></code></div>
+        <div><span>Provider</span><strong id="fea-mode-title">Checking connection</strong></div>
+        <p id="fea-mode-detail">Reading simulation capabilities…</p>
+      </section>
+
+      <form class="extension-study-card" id="fea-study-form">
+        <header><div><p class="eyebrow">Load case</p><h2>Linear static</h2></div><span>Draft</span></header>
+        <div class="extension-study-grid">
+          <label>Force <span><input id="fea-force" type="number" min="0.001" max="100000" step="0.001" value="441" required /> N</span></label>
+          <label>Direction <span class="direction-fields"><input id="fea-direction-x" aria-label="Direction X" type="number" step="0.1" value="0" required /><input id="fea-direction-y" aria-label="Direction Y" type="number" step="0.1" value="-1" required /><input id="fea-direction-z" aria-label="Direction Z" type="number" step="0.1" value="0" required /></span></label>
+          <label>Mesh <select id="fea-mesh"><option value="medium">Medium</option><option value="fine">Fine</option></select></label>
+          <label>Minimum safety factor <input id="fea-safety-factor" type="number" min="1" max="10" step="0.1" value="2" required /></label>
+          <label>Maximum displacement <span><input id="fea-displacement" type="number" min="0.001" max="1000" step="0.001" value="1" required /> mm</span></label>
+        </div>
+        <div class="extension-study-actions"><p>Preparation freezes these values against the active revision. It does not start compute.</p><button type="submit">Prepare study</button></div>
+      </form>
+
+      <section class="extension-study-card" aria-labelledby="fea-review-title">
+        <header><div><p class="eyebrow">Study record</p><h2 id="fea-review-title">No study prepared</h2></div><span id="fea-study-state">not started</span></header>
+        <dl class="extension-study-metrics">
+          <div><dt>Study</dt><dd id="fea-study-id">—</dd></div>
+          <div><dt>Currentness</dt><dd id="fea-study-currentness">—</dd></div>
+          <div class="wide"><dt>Snapshot</dt><dd id="fea-study-snapshot">—</dd></div>
+          <div class="wide"><dt>Manifest hash</dt><dd id="fea-study-hash">—</dd></div>
+        </dl>
+        <p id="fea-frozen-setup" class="extension-study-note">No frozen setup.</p>
+        <div class="fea-consent" id="fea-consent" hidden>
+          <label><input type="checkbox" id="fea-cad-consent" /> Approve sharing this exact CAD snapshot.</label>
+          <label><input type="checkbox" id="fea-compute-consent" /> Approve the disclosed compute use.</label>
+          <button type="button" id="fea-approve-run">Approve and run</button>
+        </div>
+        <div class="extension-study-buttons"><button type="button" class="secondary-button" id="fea-refresh-status" disabled>Refresh status</button><button type="button" class="secondary-button" id="fea-load-results" disabled>Load results</button></div>
+      </section>
+
+      <section class="extension-study-card" aria-labelledby="fea-evidence-title">
+        <header><div><p class="eyebrow">Solver evidence</p><h2 id="fea-evidence-title">Result not available</h2></div><span id="fea-verification-badge">not verified</span></header>
+        <dl class="extension-study-metrics">
+          <div><dt>Provider</dt><dd id="fea-result-provider">—</dd></div>
+          <div><dt>Assessment</dt><dd id="fea-result-assessment">—</dd></div>
+          <div><dt>Stress</dt><dd id="fea-result-stress">—</dd></div>
+          <div><dt>Displacement</dt><dd id="fea-result-displacement">—</dd></div>
+        </dl>
+        <p id="fea-result-limitations" class="extension-study-note">No solver evidence has been loaded.</p>
+        <output class="tool-output" id="fea-tool-output" aria-live="polite">Ready.</output>
+      </section>
+    </div>
+  `
+}
+
+function renderEmbeddedEvidence() {
+  const design = activeDesign()
+  const findings = workflowState.findings
+  const simulation = workflowState.simulationEvidence
+  const inspectionLabel = workflowState.inspectionStatus === 'complete'
+    ? `${findings.length} finding${findings.length === 1 ? '' : 's'}`
+    : 'Not checked'
+  const simulationLabel = simulation?.lifecycleState === 'COMPLETE'
+    ? simulation.currentness.toLowerCase()
+    : 'Not available'
+  return `
+    <div class="extension-workflow-page extension-evidence">
+      ${renderExtensionNavigation('/review')}
+      <header class="extension-page-heading">
+        <div><p class="eyebrow">Evidence</p><h1>Revision record</h1><p>Visible review evidence tied to the active Onshape revision.</p></div>
+      </header>
+      <section class="extension-evidence-grid" aria-label="Revision evidence summary">
+        <article><span>Model</span><strong>${design.designId}-${design.revisionId}</strong><small>${workflowState.sourceFreshness}</small></article>
+        <article><span>Manufacturing</span><strong>${inspectionLabel}</strong><small>${workflowState.inspection?.assessmentStatus ?? 'No assessment'}</small></article>
+        <article><span>Simulation</span><strong>${simulationLabel}</strong><small>${simulation?.provider ?? 'No provider result'}</small></article>
+      </section>
+      <section class="extension-evidence-section">
+        <header><div><p class="eyebrow">Manufacturing review</p><h2>${findings.length ? 'Recorded findings' : 'No findings recorded'}</h2></div><span>${workflowState.inspectionStatus}</span></header>
+        <div class="extension-evidence-list">
+          ${findings.length
+            ? findings.map((finding) => `<article><div><strong>${finding.title}</strong><p>${finding.calculation}</p></div><span data-severity="${finding.severity}">${finding.severity}</span></article>`).join('')
+            : '<p>Run Check model from Review to create revision-bound manufacturing evidence.</p>'}
+        </div>
+      </section>
+      <section class="extension-evidence-section">
+        <header><div><p class="eyebrow">Simulation</p><h2>${simulation ? 'Solver evidence' : 'No solver evidence'}</h2></div><span>${simulation?.currentness ?? 'not run'}</span></header>
+        <p>${simulation
+          ? `Study ${simulation.studyId} is ${simulation.lifecycleState.toLowerCase()} and bound to this revision.`
+          : 'Prepare and review a study from Simulation. Provider results remain distinct from engineering approval.'}</p>
+      </section>
+      <section class="extension-evidence-section">
+        <header><div><p class="eyebrow">Activity</p><h2>Audit trail</h2></div><span>${workflowState.auditEvents.length}</span></header>
+        <ol class="extension-audit-list">${workflowState.auditEvents.length
+          ? workflowState.auditEvents.slice(-6).reverse().map((event) => `<li><strong>${event.toolName}</strong><span>${event.status}</span><small>${event.summary}</small></li>`).join('')
+          : '<li><span>No review actions recorded.</span></li>'}</ol>
+      </section>
+    </div>
+  `
+}
+
 function stageCard(number, title, description, status = 'planned') {
   return `
     <article class="stage-card">
@@ -304,8 +433,11 @@ function renderDesign() {
 }
 
 function renderSimulation() {
+  const embedded = isOnshapeExtensionMode()
+  if (embedded) return renderEmbeddedSimulation()
   return `
     <div class="page">
+      ${renderExtensionNavigation('/simulation')}
       ${pageIntro(
         'Static stress simulation',
         'Prepare one bounded, revision-locked force study.',
@@ -320,7 +452,9 @@ function renderSimulation() {
         </div>
         <span class="stage-status" id="fea-mode-badge">checking</span>
       </section>
-      <aside class="compatibility-note"><strong>Real SimScale operator workflow</strong><span>The controls below remain the recorded demonstration. Use the separate <a href="/live-demo.html">live commissioning workspace</a> for frozen STEP import, reviewed topology, bounded mesh/solve execution, cancellation and actual CSV metrics. Live numerical acceptance is still required.</span></aside>
+      ${embedded
+        ? '<aside class="compatibility-note"><strong>Revision-bound simulation</strong><span>Prepare and inspect recorded studies or load exact retained evidence here without leaving Onshape. Live provider execution still requires explicit private operator approval, and no result grants engineering approval.</span></aside>'
+        : '<aside class="compatibility-note"><strong>Real SimScale operator workflow</strong><span>The controls below remain the recorded demonstration. Use the separate <a href="/live-demo.html">live commissioning workspace</a> for frozen STEP import, reviewed topology, bounded mesh/solve execution, cancellation and actual CSV metrics. Live numerical acceptance is still required.</span></aside>'}
       <section class="fea-layout">
         <section id="live-simulation-evidence" class="proposal-card"></section>
         <form class="proposal-card fea-study-form" id="fea-study-form">
@@ -397,6 +531,8 @@ function renderOnshapePanel() {
         <span class="extension-status" id="extension-status" data-status="idle">Starting</span>
       </header>
 
+      ${renderExtensionNavigation('/onshape-panel')}
+
       <section class="extension-context-card" aria-live="polite">
         <h1 id="onshape-panel-title">Active Part Studio</h1>
         <p id="extension-context-message">Validating the Onshape extension context…</p>
@@ -427,13 +563,20 @@ function renderOnshapePanel() {
 
       ${renderModelInsightAssistant('embedded')}
 
-      <details class="source-discovery panel-discovery"><summary>Source dimensions and missing checks</summary><div id="source-discovery-content"></div></details>
+      <section class="panel-simulation" aria-labelledby="panel-simulation-title">
+        <div class="panel-simulation-heading">
+          <div><p class="eyebrow">SimScale handoff</p><h2 id="panel-simulation-title">Revision-bound static study</h2></div>
+          <span>Recorded</span>
+        </div>
+        <p>The current Part Studio is staged for a linear-static validation workflow. No provider upload or solve has been started.</p>
+        <dl class="agent-metrics">
+          <div><dt>Load</dt><dd>441 N, -Y</dd></div>
+          <div><dt>Mesh</dt><dd>Medium</dd></div>
+          <div><dt>Acceptance</dt><dd>Live run required</dd></div>
+        </dl>
+      </section>
 
-      <details class="panel-more-actions">
-        <summary>Full workspace</summary>
-        <p>Simulation and supplier workflows continue in the full workspace. The same Part Studio is reloaded there; unsaved panel results are not transferred.</p>
-        <a id="panel-open-workspace" href="/design" target="_blank" rel="noopener noreferrer">Open this Part Studio in the full workspace</a>
-      </details>
+      <details class="source-discovery panel-discovery"><summary>Source dimensions and missing checks</summary><div id="source-discovery-content"></div></details>
 
       <section class="proposal-card panel-proposal" id="proposal-card" aria-labelledby="proposal-title" hidden>
         <div class="proposal-heading"><div><p class="eyebrow">Human decision required</p><h2 id="proposal-title">Inside-radius preview</h2></div><span id="proposal-status">Pending</span></div>
@@ -467,6 +610,7 @@ function renderSuppliers() {
     const preview = fictionalQuotePreview()
     return `
       <div class="page">
+        ${renderExtensionNavigation('/suppliers')}
         ${pageIntro(
           'Supplier comparison',
           'Compare controlled manufacturing options.',
@@ -505,6 +649,7 @@ function renderSuppliers() {
   }).format(value)
   return `
     <div class="page">
+      ${renderExtensionNavigation('/suppliers')}
       ${pageIntro(
         'Supplier comparison',
         'Compare controlled manufacturing options.',
@@ -550,10 +695,12 @@ function renderSuppliers() {
 }
 
 function renderReview() {
+  if (isOnshapeExtensionMode()) return renderEmbeddedEvidence()
   const reviewPackage = workflowState.reviewPackage
   if (!reviewPackage) {
     return `
       <div class="page">
+        ${renderExtensionNavigation('/review')}
         ${pageIntro(
           'Evidence package',
           'Finish with a traceable manufacturing review.',
@@ -571,6 +718,7 @@ function renderReview() {
 
   return `
     <div class="page">
+      ${renderExtensionNavigation('/review')}
       ${pageIntro(
         'Evidence package',
         reviewPackage.title,
@@ -903,12 +1051,6 @@ function updateOnshapePanel() {
   if (packageButton) {
     packageButton.disabled = true
   }
-  const workspaceLink = document.querySelector('#panel-open-workspace')
-  if (workspaceLink && onshapeExtensionContext) {
-    const params = new URLSearchParams({ ...onshapeExtensionContext, server: onshapeExtensionContext.serverOrigin })
-    params.delete('serverOrigin')
-    workspaceLink.href = `/design?${params}`
-  }
   const packageResult = document.querySelector('#panel-package-result')
   if (packageResult) {
     packageResult.hidden = !workflowState.reviewPackage
@@ -1009,7 +1151,12 @@ function synchronizeSimulationWorkspace() {
   const snapshot = document.querySelector('#fea-snapshot-key')
   if (!snapshot) return
 
-  snapshot.textContent = activeSnapshotKey()
+  const provenance = workflowState.designSource.provenance
+  const fullSnapshotKey = activeSnapshotKey()
+  snapshot.textContent = provenance?.documentName && provenance?.microversionId
+    ? `${provenance.documentName} · ${provenance.microversionId.slice(0, 8)}`
+    : `${activeDesign().designId}-${activeDesign().revisionId}`
+  snapshot.title = fullSnapshotKey
   const capabilities = feaState.capabilities
   const liveSourceNeedsSetup = workflowState.designSource.sourceId === 'onshape-live'
   for (const button of document.querySelectorAll('#fea-study-form button[type="submit"], [data-fea-tool="prepare_static_stress_study"]')) {
@@ -1019,17 +1166,27 @@ function synchronizeSimulationWorkspace() {
   const modeDetail = document.querySelector('#fea-mode-detail')
   const modeBadge = document.querySelector('#fea-mode-badge')
   if (capabilities) {
-    modeTitle.textContent = capabilities.live
-      ? `${capabilities.provider} live provider`
-      : `${capabilities.provider} validation mode`
+    const embedded = isOnshapeExtensionMode()
+    modeTitle.textContent = embedded
+      ? capabilities.live ? 'SimScale connected' : 'Simulation setup'
+      : capabilities.live ? `${capabilities.provider} live provider` : `${capabilities.provider} validation mode`
     modeDetail.textContent = capabilities.note
-    if (liveSourceNeedsSetup) modeDetail.textContent += ' This Part Studio still needs an exact CAD export, reviewed material and geometry mapping. Demo study preparation is disabled for live CAD.'
-    modeBadge.textContent = capabilities.live ? 'live' : capabilities.provider
+    if (embedded) {
+      modeDetail.textContent = liveSourceNeedsSetup
+        ? 'Live CAD connected. Review material, supports, and load region before creating a study.'
+        : 'Review the load case and acceptance limits before creating a study.'
+    }
+    if (liveSourceNeedsSetup && !embedded) modeDetail.textContent += ' This Part Studio still needs an exact CAD export, reviewed material and geometry mapping. Demo study preparation is disabled for live CAD.'
+    modeBadge.textContent = embedded ? capabilities.live ? 'connected' : 'no solve run' : capabilities.live ? 'live' : capabilities.provider
     modeBadge.dataset.status = capabilities.live ? 'ready' : 'planned'
   } else if (feaState.lastError) {
-    modeTitle.textContent = 'FEA service unavailable'
-    modeDetail.textContent = feaState.lastError.message
-    modeBadge.textContent = 'unavailable'
+    modeTitle.textContent = isOnshapeExtensionMode() ? 'Simulation setup' : 'FEA service unavailable'
+    modeDetail.textContent = isOnshapeExtensionMode()
+      ? liveSourceNeedsSetup
+        ? 'Live CAD connected. Review material, supports, and load region before creating a study.'
+        : 'Provider submission is disabled until the connection is restored.'
+      : feaState.lastError.message
+    modeBadge.textContent = isOnshapeExtensionMode() ? 'no solve run' : 'unavailable'
     modeBadge.dataset.status = 'failed'
   }
 
@@ -1095,7 +1252,8 @@ function defaultFeaToolInput(toolName) {
 }
 
 function bindSimulationControls() {
-  mountLiveSimulation(document.querySelector('#live-simulation-evidence'))
+  const liveEvidence = document.querySelector('#live-simulation-evidence')
+  if (liveEvidence) mountLiveSimulation(liveEvidence)
   document.querySelector('#fea-study-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
     const output = document.querySelector('#fea-tool-output')
@@ -1581,6 +1739,11 @@ async function renderRoute() {
     path = '/design'
   }
 
+  if (isOnshapeExtensionMode() && path === '/suppliers') {
+    window.history.replaceState({}, '', extensionRouteHref('/review'))
+    path = '/review'
+  }
+
   const render = routes[path] ?? renderNotFound
 
   if (path === '/simulation') {
@@ -1637,7 +1800,11 @@ document.addEventListener('click', (event) => {
   }
 
   event.preventDefault()
-  window.history.pushState({}, '', link.href)
+  const route = normalizePath(link.pathname)
+  const destination = isOnshapeExtensionMode() && routes[route]
+    ? extensionRouteHref(route)
+    : link.href
+  window.history.pushState({}, '', destination)
   void renderRoute()
 })
 
@@ -1645,7 +1812,8 @@ window.addEventListener('popstate', () => void renderRoute())
 window.addEventListener('buildready:navigate', (event) => {
   const route = event.detail?.route
   if (!routes[route]) return
-  if (normalizePath(window.location.pathname) === '/onshape-panel') {
+  if (isOnshapeExtensionMode()) {
+    window.history.pushState({}, '', extensionRouteHref(route))
     void renderRoute()
     return
   }
@@ -1663,12 +1831,17 @@ window.addEventListener('buildready:feachange', () => {
 globalResetButton.addEventListener('click', () => {
   resetDemoState()
   resetFeaState()
-  window.history.pushState({}, '', '/design')
+  if (isOnshapeExtensionMode()) {
+    window.history.pushState({}, '', extensionRouteHref('/onshape-panel'))
+  } else {
+    window.history.pushState({}, '', '/design')
+  }
   void renderRoute()
 })
 
 async function startApplication() {
   const panelMode = normalizePath(window.location.pathname) === '/onshape-panel'
+    || new URLSearchParams(window.location.search).get('embedded') === 'onshape'
   document.documentElement.classList.toggle('onshape-embedded-root', panelMode)
   document.body.classList.toggle('onshape-embedded', panelMode)
   await renderRoute()
@@ -1712,7 +1885,7 @@ async function startApplication() {
     await restoreSavedManufacturingReview()
     onshapeExtensionStatus = {
       phase: 'connected',
-      message: 'Read-only snapshot loaded. This panel does not automatically follow CAD edits. Open the full workspace to recheck and activate revisions before continuing.',
+      message: 'Read-only snapshot loaded. This panel does not automatically follow CAD edits. Return to Review to recheck and activate a changed revision before continuing.',
     }
   } catch (error) {
     const envelope = toolErrorEnvelope(error)
